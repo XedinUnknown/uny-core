@@ -1,0 +1,26 @@
+services:
+  dev:
+    build:
+      context: .
+      target: dev
+    image: ${DEV_IMAGE}
+    working_dir: ${WORKDIR}
+    volumes:
+      - .:${WORKDIR}
+      - ${HOST_PNPM_STORE}:${PNPM_STORE}
+    environment:
+      PNPM_HOME: ${PNPM_HOME}
+      npm_config_store_dir: ${PNPM_STORE}
+      XDG_CONFIG_HOME: ${XDG_CONFIG_HOME}
+    command: ["pnpm", "--version"]
+
+  serena:
+    image: ghcr.io/oraios/serena:latest
+    volumes:
+      - .:${WORKDIR}
+    environment:
+      SERENA_DOCKER: "1"
+    ports:
+      - "9121:9121"
+      - "24282:24282"
+    command: ["serena", "start-mcp-server", "--transport", "sse", "--host", "0.0.0.0", "--port", "9121", "--project-from-cwd"]
