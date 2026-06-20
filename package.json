@@ -5,8 +5,22 @@
   "description": "Exploration-first mobile app testing CLI.",
   "type": "module",
   "packageManager": "pnpm@10.12.1",
+  "scripts": {
+    "build": "lerna run build --stream",
+    "build:changed": "lerna run build --since --stream",
+    "test": "lerna run test --stream",
+    "test:ui": "lerna run test -- --ui",
+    "release": "lerna run build --since --stream && lerna publish from-package --yes",
+    "version": "lerna version"
+  },
   "devDependencies": {
-    "agentdeps": "0.5.1"
+    "@types/node": "^26.0.0",
+    "agentdeps": "0.5.1",
+    "lerna": "^9.0.7",
+    "nx": "^23.0.0",
+    "tsup": "^8.5.1",
+    "tsx": "^4.22.4",
+    "typescript": "^5.6.0"
   },
   "engines": {
     "node": ">=22.0.0",
