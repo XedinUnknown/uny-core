@@ -5,6 +5,10 @@
     "serena": {
       "type": "remote",
       "url": "http://localhost:9121/sse"
+    },
+    "jetbrains": {
+      "type": "remote",
+      "url": "http://127.0.0.1:64342/sse"
     }
   },
   "permission": {
