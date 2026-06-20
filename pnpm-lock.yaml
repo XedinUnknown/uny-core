@@ -1,0 +1,23 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    devDependencies:
+      agentdeps:
+        specifier: 0.5.1
+        version: 0.5.1
+
+packages:
+
+  agentdeps@0.5.1:
+    resolution: {integrity: sha512-T9z0bEn3h69QINGcAxHE01axrOCYSLn6gP6h9jbK+d6CeJjznrgZi4xipmSSpBk6mxlveujBEQXtcSINycv3rQ==}
+    hasBin: true
+
+snapshots:
+
+  agentdeps@0.5.1: {}
