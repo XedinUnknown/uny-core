@@ -50,7 +50,7 @@
   },
   "agent": {
     "plan": {
-      "model": "anthropic/claude-opus-4-5",
+      "model": "anthropic/claude-opus-4-8",
       "mode": "primary",
       "color": "#AE6FD3",
       "permission": {
