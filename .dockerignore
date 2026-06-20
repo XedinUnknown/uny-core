@@ -1,0 +1,10 @@
+.git
+.idea
+.opencode/node_modules
+node_modules
+dist
+coverage
+output
+.e2e-active-session
+.runner.lock
+.env
