@@ -9,16 +9,23 @@
  * the returned value is both the definition and the metadata source.
  */
 
-import type { Definition, Container } from "./types.js";
+import type { Container } from "./types.js";
 
 // ── Type ───────────────────────────────────────────────────────────────
 
 /**
  * A Definition that also declares its dependency keys.
- * The function IS the definition — no wrapping, no toDefinition().
+ * Callable interface — the function IS the definition.
  */
-export interface DependencyAwareDefinition extends Definition {
+export interface DependencyAwareDefinition {
+  (container: Container): any;
   getDependencies(): string[];
+}
+
+// ── helper ─────────────────────────────────────────────────────────────
+
+function def(fn: (c: Container) => any, deps: string[]): DependencyAwareDefinition {
+  return Object.assign(fn, { getDependencies: () => deps }) as DependencyAwareDefinition;
 }
 
 // ── factory ────────────────────────────────────────────────────────────
@@ -39,12 +46,13 @@ export function factory(
   deps: string[],
   fn: (...args: any[]) => any
 ): DependencyAwareDefinition {
-  const def: DependencyAwareDefinition = (c: Container) => {
-    const resolved = deps.map((key) => c.resolve(key));
-    return fn(...resolved);
-  };
-  def.getDependencies = () => deps;
-  return def;
+  return def(
+    (c) => {
+      const resolved = deps.map((key) => c.resolve(key));
+      return fn(...resolved);
+    },
+    deps
+  );
 }
 
 // ── value ──────────────────────────────────────────────────────────────
@@ -54,9 +62,7 @@ export function factory(
  * Useful for constants, defaults, and host-injected config.
  */
 export function value(v: any): DependencyAwareDefinition {
-  const def: DependencyAwareDefinition = () => v;
-  def.getDependencies = () => [];
-  return def;
+  return def(() => v, []);
 }
 
 // ── alias ──────────────────────────────────────────────────────────────
@@ -66,9 +72,7 @@ export function value(v: any): DependencyAwareDefinition {
  * Useful for binding, compatibility, and scoping.
  */
 export function alias(from: string): DependencyAwareDefinition {
-  const def: DependencyAwareDefinition = (c: Container) => c.resolve(from);
-  def.getDependencies = () => [from];
-  return def;
+  return def((c) => c.resolve(from), [from]);
 }
 
 // ── construct ──────────────────────────────────────────────────────────
@@ -86,10 +90,11 @@ export function construct(
   cls: new (...args: any[]) => any,
   deps: string[] = []
 ): DependencyAwareDefinition {
-  const def: DependencyAwareDefinition = (c: Container) => {
-    const resolved = deps.map((key) => c.resolve(key));
-    return new cls(...resolved);
-  };
-  def.getDependencies = () => deps;
-  return def;
+  return def(
+    (c) => {
+      const resolved = deps.map((key) => c.resolve(key));
+      return new cls(...resolved);
+    },
+    deps
+  );
 }
