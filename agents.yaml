@@ -1,0 +1,5 @@
+dependencies:
+  - repo: Dhii/containers
+    ref: 0.3.x
+    skills:
+      - config-based-modularity
