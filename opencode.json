@@ -1,0 +1,88 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": ["AGENTS.md"],
+  "mcp": {
+    "serena": {
+      "type": "remote",
+      "url": "http://localhost:9121/sse"
+    }
+  },
+  "permission": {
+    "edit": "allow",
+    "read": "allow",
+    "list": "allow",
+    "glob": "allow",
+    "grep": "allow",
+    "webfetch": "allow",
+    "skill": "allow",
+    "task": "allow",
+    "bash": {
+      "*": "deny",
+      "git status*": "allow",
+      "git diff*": "allow",
+      "git log*": "allow",
+      "git show*": "allow",
+      "git branch*": "allow",
+      "git fetch*": "allow",
+      "node*": "allow",
+      "npm*": "allow",
+      "npx*": "allow",
+      "pnpm*": "allow",
+      "yarn*": "allow",
+      "docker ps*": "allow",
+      "docker compose ps*": "allow",
+      "docker compose config*": "allow",
+      "docker compose build*": "allow",
+      "docker compose up*": "allow",
+      "docker compose logs*": "allow",
+      "docker compose down*": "allow",
+      "vitest*": "allow",
+      "tsc*": "allow",
+      "git push*": "ask",
+      "git reset --hard*": "ask",
+      "rm -rf*": "ask",
+      "docker system prune*": "ask"
+    }
+  },
+  "agent": {
+    "plan": {
+      "model": "anthropic/claude-opus-4-5",
+      "mode": "primary",
+      "color": "#AE6FD3",
+      "permission": {
+        "edit": "deny",
+        "task": "allow"
+      }
+    },
+    "build": {
+      "model": "anthropic/claude-sonnet-4-6",
+      "mode": "all",
+      "color": "#5C9CF5",
+      "permission": {
+        "edit": "allow",
+        "bash": {
+          "*": "allow",
+          "git push*": "ask",
+          "git reset --hard*": "ask",
+          "rm -rf*": "ask",
+          "docker system prune*": "ask"
+        }
+      }
+    },
+    "code": {
+      "model": "anthropic/claude-haiku-4-5",
+      "mode": "primary",
+      "color": "#FFE992",
+      "permission": {
+        "edit": "allow",
+        "task": "deny",
+        "bash": {
+          "*": "allow",
+          "git push*": "ask",
+          "git reset --hard*": "ask",
+          "rm -rf*": "ask"
+        }
+      }
+    }
+  }
+}
