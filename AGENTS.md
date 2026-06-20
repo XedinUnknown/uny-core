@@ -15,3 +15,33 @@ Agent-only notes:
 - Serena MCP is available when `docker compose up -d serena` is running; OpenCode connects to it at `http://localhost:9121/sse`.
 - `mcp-compose.json` is for non-OpenCode clients only (Claude Code, Codex); do not edit `opencode.json` to match it.
 - `mcp_compose.toml` has been replaced by `mcp-compose.json`; do not recreate the TOML file.
+
+## Package Structure
+
+### `@uny/di`
+
+DI library with barrel-based source structure:
+
+- `src/index.ts` — barrel re-exports only
+- `src/types.ts` — Definition, Extension, Provider, Container, KeyInspection
+- `src/compose.ts` — composeProviders()
+- `src/containers.ts` — DelegatingContainer, CachingContainer, ProxyContainer, CompositeContainer
+- `src/circular.ts` — CircularDetector
+- `src/bootstrap.ts` — bootstrap()
+- `src/definitions.ts` — factory(), value(), alias(), construct()
+- `src/errors.ts` — DependencyError, MissingKeyError, CircularDependencyError
+
+Exports: `@uny/di`, `@uny/di/errors`, `@uny/di/definitions`
+
+### `@uny/core`
+
+Core app module providing basic paths and config.
+
+- `src/index.ts` — coreProvider with app config and derived paths
+
+## Testing
+
+- `node:test` + `node:assert/strict` with tsx loader
+- Tests run against compiled `dist/` output (package `exports` field enforced)
+- Build triggered automatically by Nx before tests
+- PhpStorm limitation: `assert.strictEqual` shows as unresolved (CJS namespace merge pattern). Tests pass at runtime.

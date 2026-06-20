@@ -36,6 +36,6 @@ The runner is planned around config-based modularity:
 - pnpm workspaces.
 - Commander.js for the CLI.
 - JSON config with JSON Schema validation.
-- Vitest for tests.
+- node:test + tsx for tests.
 - tsup for package builds.
 - WebDriverIO/Appium for device automation.

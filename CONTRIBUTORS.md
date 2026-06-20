@@ -33,7 +33,24 @@ docker compose logs -f dev
 docker compose down
 ```
 
-These commands currently verify and run the development container only; they do not build the runner yet.
+## Build and Test
+
+```bash
+# Build all packages
+pnpm build
+
+# Build only changed packages
+pnpm build:changed
+
+# Run all tests (builds first via Nx dependency)
+pnpm test
+
+# Run tests for a specific package
+cd packages/di && pnpm test
+cd packages/core && pnpm test
+```
+
+Tests use `node:test` with tsx loader and run against compiled `dist/` output. The build step is automatically triggered by Nx before tests.
 
 ## Serena MCP Server
 
