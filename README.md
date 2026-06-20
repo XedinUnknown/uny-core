@@ -1,14 +1,14 @@
-# Uny
+# uny
 
-Uny is a planned exploration-first mobile app testing CLI.
+uny is a planned exploration-first mobile app testing CLI.
 
 Unlike a traditional suite runner, it is intended to run individual commands against a real mobile device while preserving the automation session between invocations. The goal is fast interactive and AI-assisted exploration through commands such as `uny run`, stdin input, feature files, tree inspection, screenshots, and reset/session controls.
 
 ## Status
 
-This `master` branch is currently a pre-release placeholder. The baseline TypeScript monorepo and development workflow are planned for the `0.1.x` series.
+This branch contains the first `0.1.x` development setup scaffolding. Runner implementation packages and CLI behavior are still planned work.
 
-There is no install, build, test, lint, or run command in this branch yet.
+See `CONTRIBUTORS.md` for development setup notes.
 
 ## Planned Design
 
