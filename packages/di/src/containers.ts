@@ -2,7 +2,7 @@
  * @uny/di — Container implementations
  */
 
-import type { Container, KeyInspection, Provider } from "./types.js";
+import type { Container, Provider } from "./types.js";
 import { MissingKeyError } from "./errors.js";
 
 // ── DelegatingContainer ────────────────────────────────────────────────
@@ -49,15 +49,6 @@ export class DelegatingContainer implements Container {
     );
   }
 
-  inspect(key: string): KeyInspection {
-    return {
-      key,
-      definedBy: key in (this.provider.definitions ?? {}) ? "provider" : null,
-      extendedBy: key in (this.provider.extensions ?? {}) ? ["provider"] : [],
-      resolved: false,
-    };
-  }
-
   keys(): string[] {
     const defKeys = Object.keys(this.provider.definitions ?? {});
     const extKeys = Object.keys(this.provider.extensions ?? {});
@@ -87,20 +78,6 @@ export class CachingContainer implements Container {
 
   has(key: string): boolean {
     return this.inner.has(key);
-  }
-
-  inspect(key: string): KeyInspection {
-    const inner = this.inner.inspect?.(key) ?? {
-      key,
-      definedBy: null,
-      extendedBy: [],
-      resolved: false,
-    };
-    return {
-      ...inner,
-      resolved: this.cache.has(key),
-      cached: this.cache.has(key),
-    };
   }
 
   keys(): string[] {
@@ -140,15 +117,6 @@ export class ProxyContainer implements Container {
     return this.inner.has(key);
   }
 
-  inspect(key: string): KeyInspection {
-    return this.inner?.inspect?.(key) ?? {
-      key,
-      definedBy: null,
-      extendedBy: [],
-      resolved: false,
-    };
-  }
-
   keys(): string[] {
     return this.inner?.keys?.() ?? [];
   }
@@ -174,20 +142,6 @@ export class CompositeContainer implements Container {
 
   has(key: string): boolean {
     return this.containers.some((c) => c.has(key));
-  }
-
-  inspect(key: string): KeyInspection {
-    for (const c of this.containers) {
-      if (c.has(key)) {
-        return c.inspect?.(key) ?? {
-          key,
-          definedBy: null,
-          extendedBy: [],
-          resolved: false,
-        };
-      }
-    }
-    return { key, definedBy: null, extendedBy: [], resolved: false };
   }
 
   keys(): string[] {
