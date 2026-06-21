@@ -2,7 +2,7 @@
  * @uny/di — Bootstrap
  */
 
-import type { Container, Provider } from "./types.js";
+import type { Container, ComposedProvider, Provider } from "./types.js";
 import { composeProviders } from "./compose.js";
 import {
   DelegatingContainer,
@@ -13,13 +13,16 @@ import {
 import { CircularDetector } from "./circular.js";
 
 /**
- * Pure composition function. Takes an ordered map of providers and
- * returns a cached container with full delegation support.
+ * Bootstrap wiring. Takes an ordered map of providers and returns a cached
+ * container with full delegation support.
  *
- * Both CLI host and tests call this with the same signature.
+ * Composition happens internally. Provenance (override history + extension
+ * chain for every key) is stored under the `app/provenance` key in the
+ * composed definitions, making it resolvable via the container.
  *
  * Bootstrap wiring (matches Dhii pattern):
  *   providers → composeProviders
+ *   → inject app/provenance definition
  *   → DelegatingContainer(composed, proxy)    — resolves from provider, delegates to proxy
  *   → CircularDetector(delegating)            — detects cycles (decorator)
  *   → CompositeContainer([extras, detected])  — external containers take priority
@@ -31,6 +34,13 @@ export function bootstrap(
   additionalContainers: Container[] = []
 ): Container {
   const composed = composeProviders(providers);
+
+  // Store provenance under app/provenance so it's resolvable via the container
+  if (!composed.definitions) {
+    composed.definitions = {};
+  }
+  composed.definitions['app/provenance'] = () => composed.provenance;
+
   const proxy = new ProxyContainer();
   const delegating = new DelegatingContainer(composed, proxy);
   const detected = new CircularDetector(delegating);

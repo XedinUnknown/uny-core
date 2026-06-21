@@ -602,4 +602,62 @@ describe("composition library (@uny/di)", () => {
       assert.throws(() => c.resolve("missing"), { message: /none/ });
     });
   });
+
+  // ── Provenance ──────────────────────────────────────────────────────
+
+  describe("provenance", () => {
+    it("records full override history (definedBy)", () => {
+      const A: Provider = { definitions: { key: () => "A" } };
+      const B: Provider = { definitions: { key: () => "B" } };
+      const C: Provider = { definitions: { key: () => "C" } };
+      const providers = new Map<string, Provider>([
+        ["A", A],
+        ["B", B],
+        ["C", C],
+      ]);
+      const composed = composeProviders(providers);
+      const prov = composed.provenance.get("key");
+      assert.ok(prov);
+      assert.deepStrictEqual(prov.definedBy, ["A", "B", "C"]); // winner is last
+      assert.deepStrictEqual(prov.extendedBy, []);
+    });
+
+    it("records extension chain (extendedBy) in order", () => {
+      const base: Provider = { definitions: { key: () => [] } };
+      const ext1: Provider = {
+        extensions: { key: (prev) => [...(prev ?? []), "ext1"] },
+      };
+      const ext2: Provider = {
+        extensions: { key: (prev) => [...prev, "ext2"] },
+      };
+      const providers = new Map<string, Provider>([
+        ["base", base],
+        ["ext1", ext1],
+        ["ext2", ext2],
+      ]);
+      const composed = composeProviders(providers);
+      const prov = composed.provenance.get("key");
+      assert.ok(prov);
+      assert.deepStrictEqual(prov.definedBy, ["base"]);
+      assert.deepStrictEqual(prov.extendedBy, ["ext1", "ext2"]);
+    });
+
+    it("app/provenance is resolvable after bootstrap", () => {
+      const A: Provider = { definitions: { key: () => "A" } };
+      const B: Provider = { definitions: { key: () => "B" } };
+      const providers = new Map<string, Provider>([
+        ["A", A],
+        ["B", B],
+      ]);
+      const container = bootstrap(providers);
+      const prov = container.resolve("app/provenance") as Map<
+        string,
+        { key: string; definedBy: string[]; extendedBy: string[] }
+      >;
+      assert.ok(prov instanceof Map);
+      const keyProv = prov.get("key");
+      assert.ok(keyProv);
+      assert.deepStrictEqual(keyProv.definedBy, ["A", "B"]);
+    });
+  });
 });

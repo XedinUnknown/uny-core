@@ -14,17 +14,28 @@ export interface Provider {
   extensions?: Record<string, Extension>;
 }
 
-export interface KeyInspection {
+/**
+ * Provenance for a single key: which providers defined it (in order,
+ * last = winner) and which providers contributed extensions (in order).
+ */
+export interface KeyProvenance {
   key: string;
-  definedBy: string | null;
-  extendedBy: string[];
-  resolved: boolean;
-  cached?: boolean;
+  definedBy: string[];   // ordered; last entry is the winning definition
+  extendedBy: string[];  // ordered; reflects extension composition order
+}
+
+/**
+ * The result of composing an ordered provider map.
+ * Extends Provider so it can be used anywhere a Provider is expected.
+ * The provenance map is a byproduct of composition — it records the
+ * full override history and extension chain for every key.
+ */
+export interface ComposedProvider extends Provider {
+  provenance: Map<string, KeyProvenance>;
 }
 
 export interface Container {
   resolve<T = any>(key: string): T;
   has(key: string): boolean;
-  inspect?(key: string): KeyInspection;
   keys?(): string[];
 }
