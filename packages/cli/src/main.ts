@@ -1,6 +1,9 @@
 /**
  * @uny/cli — main
- * Entry point: composition, bootstrap, dispatch.
+ *
+ * Bootstrap and dispatch for the CLI.
+ * (In Phase 3+, this moves into the @uny/cli module provider;
+ * for Phase 2, it's a helper invoked by bin/uny.ts.)
  */
 
 import { readFileSync } from 'node:fs';
@@ -13,6 +16,7 @@ import {
   MissingKeyError,
   type Provider,
 } from '@uny/di';
+import { coreProvider } from '@uny/core';
 import { parseFlags, type Flags } from './flags.js';
 import { buildBaseProviders, type AppConfig } from './providers.js';
 import { loadTransform } from './loader.js';
@@ -21,13 +25,8 @@ import { inspectCommand } from './commands/inspect.js';
 /**
  * main(argv: string[]): Promise<void>
  *
- * 1. Parse flags
- * 2. Load base provider map
- * 3. Load and apply user transform from uny.config.js
- * 4. Append cli-overrides (flags always win)
- * 5. Required-key guard
- * 6. Bootstrap container
- * 7. Dispatch command
+ * Phase 2 bootstrap: compose providers, apply transform, bootstrap container, dispatch.
+ * Assumes the working directory and package location are set correctly.
  */
 export async function main(argv: string[]): Promise<void> {
   const flags = parseFlags(argv);
@@ -86,19 +85,8 @@ export async function main(argv: string[]): Promise<void> {
     },
   });
 
-  // Required-key guard: check that core still exists
-  requiredKeyGuard(workingMap);
-
-  // Bootstrap container
-  const container = bootstrap(workingMap);
-
-  // Dispatch command
-  await dispatchCommand(flags.command, container, flags);
-}
-
-function requiredKeyGuard(map: Map<string, Provider>): void {
-  // Check that 'core' provider is still present
-  if (!map.has('core')) {
+  // Required-key guard: check that core provider is still present
+  if (!workingMap.has('core')) {
     throw new Error(
       "required provider 'core' is missing after uny.config.js transform. " +
       'Did your transform accidentally delete it?'
@@ -106,7 +94,7 @@ function requiredKeyGuard(map: Map<string, Provider>): void {
   }
 
   // Try to resolve a key from core to verify it works
-  const composed = composeProviders(map);
+  const composed = composeProviders(workingMap);
   const delegating = new DelegatingContainer(composed);
   try {
     delegating.resolve('app/rootDir');
@@ -119,6 +107,12 @@ function requiredKeyGuard(map: Map<string, Provider>): void {
     }
     throw e;
   }
+
+  // Bootstrap container
+  const container = bootstrap(workingMap);
+
+  // Dispatch command
+  await dispatchCommand(flags.command, container, flags);
 }
 
 async function dispatchCommand(
