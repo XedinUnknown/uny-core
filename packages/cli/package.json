@@ -1,0 +1,30 @@
+{
+  "name": "@uny/cli",
+  "version": "0.0.0",
+  "description": "Uny CLI: runnable binary with transform-hook extensibility.",
+  "type": "module",
+  "bin": {
+    "uny": "./dist/bin/uny.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/main.d.ts",
+      "import": "./dist/main.js"
+    }
+  },
+  "main": "dist/main.js",
+  "files": ["dist", "bin"],
+  "scripts": {
+    "build": "tsup src/bin/uny.ts src/main.ts src/flags.ts src/providers.ts src/loader.ts src/commands/inspect.ts --format esm --dts --splitting false",
+    "test": "node --import tsx --test tests/loader.test.ts tests/cli.inspect.test.ts"
+  },
+  "dependencies": {
+    "@uny/core": "workspace:*",
+    "@uny/di": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "execa": "^6.1.0",
+    "typescript": "^5.6.0"
+  }
+}

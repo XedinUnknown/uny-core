@@ -2,7 +2,7 @@
  * @uny/di — Circular dependency detector
  */
 
-import type { Container, KeyInspection } from "./types.js";
+import type { Container } from "./types.js";
 import { CircularDependencyError } from "./errors.js";
 
 /**
@@ -29,15 +29,6 @@ export class CircularDetector implements Container {
 
   has(key: string): boolean {
     return this.inner.has(key);
-  }
-
-  inspect(key: string): KeyInspection {
-    return this.inner.inspect?.(key) ?? {
-      key,
-      definedBy: null,
-      extendedBy: [],
-      resolved: false,
-    };
   }
 
   keys(): string[] {

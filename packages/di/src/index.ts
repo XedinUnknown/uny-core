@@ -6,7 +6,8 @@ export type {
   Definition,
   Extension,
   Provider,
-  KeyInspection,
+  KeyProvenance,
+  ComposedProvider,
   Container,
 } from "./types.js";
 
