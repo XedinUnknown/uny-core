@@ -1,6 +1,6 @@
 # Contributors
 
-This branch contains development setup scaffolding only. Runner implementation packages and CLI behavior are still planned work.
+This branch contains implemented DI/core foundations and a partial CLI foundation. The instruction runner, persistent hosts, sessions, and device adapters remain planned work.
 
 ## Development Setup
 
@@ -54,26 +54,17 @@ Tests use `node:test` with tsx loader and run against compiled `dist/` output. T
 
 ## Serena MCP Server
 
-[Serena](https://github.com/oraios/serena) runs as a separate Docker Compose service using its official image. It provides semantic code retrieval and editing tools to AI agents via MCP.
+[Serena](https://github.com/oraios/serena) provides semantic code retrieval and editing tools to AI agents via MCP. Each client starts it directly as an on-demand local stdio process via `uvx` — no Docker container and no persistent shared server.
 
-Start Serena alongside the dev container:
+Install [uv](https://docs.astral.sh/uv/) on the host. `uvx` runs Serena directly, so no separate Serena installation is required.
 
-```bash
-docker compose up -d serena
+OpenCode is configured in `opencode.json`. Restart OpenCode after changing that configuration. Other clients should use their own local stdio MCP configuration with this command and arguments:
+
+```text
+$HOME/.local/bin/uvx -p 3.13 --from git+https://github.com/oraios/serena serena start-mcp-server --context=ide --open-web-dashboard=false --project-from-cwd
 ```
 
-Serena listens on `http://localhost:9121/sse`. OpenCode is pre-configured to connect to it via `opencode.json`. The web dashboard is available at `http://localhost:24282`.
-
-For other MCP clients (Claude Code, Codex), `mcp-compose` is used on the host to sync `~/.mcp.json`:
-
-```bash
-# Install once on host (no sudo needed)
-npm config set prefix ~/.npm-global
-npm install -g mcp-compose
-
-# Sync after starting Serena
-mcp-compose up
-```
+There is no `serena` Docker Compose service in this project. `mcp-compose` is not used for Serena because it creates persistent shared gateways. A shared/background Serena server risks stale or cross-session state (a different client can silently switch its active project or write to a location this project doesn't control).
 
 ## AI Tooling
 
@@ -83,7 +74,7 @@ Phase 0 AI tooling configuration is included for agent-driven implementation:
 - `.config/agentdeps/config.yaml` configures agentdeps for project-local OpenCode installs.
 - `opencode.json` configures OpenCode permissions, `plan`, `build`, and `code` agents, and the Serena MCP server.
 - `.agents/` contains agentloom canonical agent definitions.
-- `mcp-compose.json` configures `mcp-compose` for non-OpenCode MCP clients (Claude Code, Codex).
+- `mcp-compose.json` remains available for non-Serena MCP gateways.
 
 Install configured agent dependencies from the dev container:
 

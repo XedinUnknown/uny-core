@@ -3,10 +3,6 @@
     "claudeConfigPath": "~/.mcp.json"
   },
   "mcpServers": {
-    "serena": {
-      "type": "sse",
-      "url": "http://localhost:9121/sse"
-    },
     "jetbrains": {
       "type": "sse",
       "url": "http://127.0.0.1:64342/sse"

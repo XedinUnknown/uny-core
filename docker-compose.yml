@@ -21,14 +21,3 @@ services:
       - .:/project
     environment:
       UNY_PROJECT_DIR: /project
-
-  serena:
-    image: ghcr.io/oraios/serena:latest
-    volumes:
-      - .:${WORKDIR}
-    environment:
-      SERENA_DOCKER: "1"
-    ports:
-      - "9121:9121"
-      - "24282:24282"
-    command: ["serena", "start-mcp-server", "--transport", "sse", "--host", "0.0.0.0", "--port", "9121", "--project-from-cwd"]

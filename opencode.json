@@ -3,8 +3,23 @@
   "instructions": ["AGENTS.md"],
   "mcp": {
     "serena": {
-      "type": "remote",
-      "url": "http://localhost:9121/sse"
+      "type": "local",
+      "command": [
+        "uvx",
+        "-p",
+        "3.13",
+        "--from",
+        "git+https://github.com/oraios/serena",
+        "serena",
+        "start-mcp-server",
+        "--context=ide",
+        "--open-web-dashboard=false",
+        "--project-from-cwd"
+      ],
+      "environment": {
+        "PATH": "{env:HOME}/.local/bin:{env:PATH}",
+        "BROWSER": "/bin/true"
+      }
     },
     "jetbrains": {
       "type": "remote",

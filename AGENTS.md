@@ -4,16 +4,17 @@ Read `README.md` first. It is the shared source for project status and human-fac
 
 Agent-only notes:
 
-- Inspect `.opencode/plans/` before creating or changing project files; the current plan is the source of truth until implementation begins.
-- Treat runner implementation as not started; current `0.1.x` work is development setup scaffolding only.
+- Read `.opencode/plans/architecture.md` and `.opencode/plans/implementation-plan.md` before creating or changing project files; they are the design and delivery sources of truth until implementation supersedes planned behavior.
+- Treat the instruction runner, persistent hosts, sessions, and device adapters as not started. DI/core and the initial CLI/config/inspect foundation already exist.
 - Use the documented Docker Compose setup commands only; do not infer missing test, lint, or runner commands.
 - Keep documentation and scaffolding changes minimal unless explicitly requested.
 - Do not start implementation phases from the plan unless explicitly asked.
 - When implementation does begin, preserve the plan's test-first requirement and config-based modularity constraints.
 - Use the `Dhii/containers` `0.3.x` config-based modularity skill as the canonical source when available.
 - Restart OpenCode after changes to `opencode.json`, `.agents/`, or `.opencode/` files.
-- Serena MCP is available when `docker compose up -d serena` is running; OpenCode connects to it at `http://localhost:9121/sse`.
-- `mcp-compose.json` is for non-OpenCode clients only (Claude Code, Codex); do not edit `opencode.json` to match it.
+- Serena MCP is launched directly by each client on demand over stdio via `uvx`. There is no Docker Compose `serena` service and no shared/background server; do not add one back — a shared server can be silently mutated (active project, memory writes) by an unrelated client or session.
+- Serena MCP calls should go through the MCP tool interface, not the `serena` CLI, so results reflect the actual connected server rather than a separately-invoked process that may target a different data directory.
+- `mcp-compose.json` does not manage Serena because it creates persistent shared gateways. Do not use it as a Serena configuration source.
 - `mcp_compose.toml` has been replaced by `mcp-compose.json`; do not recreate the TOML file.
 
 ## Package Structure
@@ -22,8 +23,9 @@ Agent-only notes:
 
 DI library with barrel-based source structure:
 
+- `README.md` — intended DI contract under design review; implementation must be reconciled before WORK-2 is accepted
 - `src/index.ts` — barrel re-exports only
-- `src/types.ts` — Definition, Extension, Provider, Container, KeyInspection
+- `src/types.ts` — Definition, Extension, Provider, Container, and current provenance types
 - `src/compose.ts` — composeProviders()
 - `src/containers.ts` — DelegatingContainer, CachingContainer, ProxyContainer, CompositeContainer
 - `src/circular.ts` — CircularDetector
@@ -38,6 +40,17 @@ Exports: `@uny/di`, `@uny/di/errors`, `@uny/di/definitions`
 Core app module providing basic paths and config.
 
 - `src/index.ts` — coreProvider with app config and derived paths
+
+### `@uny/cli`
+
+Partial executable and project-configuration foundation:
+
+- `src/bin/uny.ts` — package binary entrypoint
+- `src/main.ts` — bootstrap and command dispatch
+- `src/flags.ts` — current hand-written option parser
+- `src/providers.ts` — base provider map
+- `src/loader.ts` — `uny.config.js`/`uny.config.mjs` provider loading
+- `src/commands/inspect.ts` — human and JSON composition inspection
 
 ## Testing
 
