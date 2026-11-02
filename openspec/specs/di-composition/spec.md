@@ -149,11 +149,9 @@ Composition SHALL retain extensions independently of definition overrides and ch
 - Source: [construct](../../../packages/di/src/definitions.ts#L89-L100).
 - Tests: [construct cases](../../../packages/di/tests/di.test.ts#L529-L583). Repeated direct invocation is source-derived.
 
-### Requirement: Current Composition Boundaries
+### Requirement: Mutable Metadata and Shared Helper State
 
-These scenarios record current source behavior. They are not intentional design guarantees: they describe what the implementation does today, including the absence of validation and isolation that a future version could add without violating stated requirements.
-
-Composition and helpers SHALL use synchronous calls and ordinary JavaScript records, arrays, and maps. They SHALL NOT enforce deep immutability or validate the dependency graph. Returned metadata SHALL remain mutable at this time. Ordinary object property semantics SHALL apply rather than a guaranteed prototype-safe key space.
+These scenarios record current source behavior, not intentional guarantees. Composition helpers SHALL expose the caller-supplied dependency array directly through `getDependencies()` rather than copying it. Returned provenance metadata SHALL remain mutable. A future version could add immutability or validation without violating stated requirements.
 
 #### Scenario: Change a Factory Dependency Array
 
@@ -165,10 +163,19 @@ Composition and helpers SHALL use synchronous calls and ordinary JavaScript reco
 - **WHEN** the caller supplies a dependency array to `construct`
 - **THEN** `getDependencies()` returns that same array, as it does for `factory`, rather than a copy
 
+#### Evidence
+
+- Source: [shared helper arrays](../../../packages/di/src/definitions.ts#L27-L55).
+- Tests: [helper metadata](../../../packages/di/tests/di.test.ts#L437-L584). These cases have no dedicated tests; they record source behavior.
+
+### Requirement: Synchronous Evaluation and Live Extension Lookup
+
+Composition and resolution SHALL use synchronous calls only. The extension chain SHALL look up each provider's extension function from the original provider record at resolution time rather than capturing a frozen snapshot at composition time. Ordinary object property semantics apply; no prototype-safe key space is guaranteed.
+
 #### Scenario: Replace a Chained Extension After Composition
 
 - **WHEN** the caller replaces a later chained extension in its provider record after composition but before resolution
-- **THEN** the chain looks up and invokes the replacement from that record when it runs rather than using a frozen snapshot of provider functions
+- **THEN** the chain looks up and invokes the replacement from that record when it runs
 
 #### Scenario: Return a Promise
 
@@ -177,5 +184,5 @@ Composition and helpers SHALL use synchronous calls and ordinary JavaScript reco
 
 #### Evidence
 
-- Source: [records and captured extension lookup](../../../packages/di/src/compose.ts#L18-L54), [shared helper arrays](../../../packages/di/src/definitions.ts#L27-L55), [synchronous invocation](../../../packages/di/src/containers.ts#L26-L42).
-- Tests: [ordinary composition](../../../packages/di/tests/di.test.ts#L23-L82), [helper metadata](../../../packages/di/tests/di.test.ts#L437-L584). These boundary cases have no dedicated tests; they record source behavior, not additional guarantees of validation, isolation, or asynchronous orchestration.
+- Source: [captured extension lookup](../../../packages/di/src/compose.ts#L18-L54), [synchronous invocation](../../../packages/di/src/containers.ts#L26-L42).
+- Tests: [ordinary composition](../../../packages/di/tests/di.test.ts#L23-L82). These cases have no dedicated tests; they record source behavior, not guarantees of isolation or async orchestration.

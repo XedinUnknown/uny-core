@@ -202,16 +202,9 @@ The root package SHALL export `DelegatingContainer`, `CachingContainer`, `ProxyC
 - Source: [CircularDetector](../../../packages/di/src/circular.ts).
 - Tests: [proxy wiring and circular/acyclic chains](../../../packages/di/tests/di.test.ts#L315-L364). Exact chain contents, cleanup after errors, metadata forwarding, and asynchronous limits are source-derived.
 
-### Requirement: Bootstrap Lookup and Cache Wiring
+### Requirement: Bootstrap Composition and Lookup
 
-`bootstrap(providers, additionalContainers = [])` SHALL compose providers and return a container with the following four observable behaviors:
-
-1. **Composition**: providers are composed into definition and extension records before any resolution.
-2. **Lookup/precedence**: additional containers take priority over provider-defined keys; provider definitions and extensions receive a reference to the full application container so they can resolve any key, including keys from additional containers.
-3. **Caching**: each resolved value is cached so subsequent resolves of the same key return the first result without re-invoking the definition.
-4. **Cycle detection**: a direct or indirect circular dependency among provider keys throws `CircularDependencyError` on first resolution; bootstrap itself returns without resolving any key eagerly.
-
-The internal arrangement of decorators that achieves these behaviors is an implementation detail and is not required.
+`bootstrap(providers, additionalContainers = [])` SHALL compose providers before any resolution. Additional containers take priority over provider-defined keys. Provider definitions and extensions receive a reference to the full application container so they can resolve any key, including those from additional containers. The internal arrangement of decorators is an implementation detail.
 
 #### Scenario: Override a Provider From an Additional Container
 
@@ -219,12 +212,20 @@ The internal arrangement of decorators that achieves these behaviors is an imple
 - **THEN** the additional container's value wins and is cached by the application container
 - **THEN** a provider callback can resolve keys supplied only by additional containers through its supplied proxy
 
+#### Evidence
+
+- Source: [bootstrap wiring](../../../packages/di/src/bootstrap.ts#L32-L52).
+- Tests: [additional priority and full lookup](../../../packages/di/tests/di.test.ts#L379-L434). Extension lookup through the proxy is source-derived.
+
+### Requirement: Bootstrap Caching and Cycle Detection
+
+The container returned by `bootstrap` SHALL cache each resolved value so subsequent resolves return the first result without re-invoking the definition. A direct or indirect circular dependency among provider keys SHALL throw `CircularDependencyError` on first resolution. Bootstrap itself SHALL return without resolving any key eagerly.
+
 #### Scenario: Detect a Provider Cycle Lazily
 
 - **WHEN** providers contain `a` to `b` to `a`
 - **THEN** bootstrap itself returns without resolving them
 - **THEN** resolving `a` through the application container throws `CircularDependencyError`
-- **THEN** bootstrap does not eagerly resolve services or validate the whole dependency graph
 
 #### Scenario: Limit Bootstrap Detection to the Provider Container
 
@@ -234,7 +235,7 @@ The internal arrangement of decorators that achieves these behaviors is an imple
 #### Evidence
 
 - Source: [bootstrap wiring](../../../packages/di/src/bootstrap.ts#L32-L52).
-- Tests: [caching, additional priority, full lookup, and cycles](../../../packages/di/tests/di.test.ts#L368-L435). Additional-result caching, extension lookup through the proxy, detection scope, and eager-validation limits are source-derived.
+- Tests: [caching and cycles](../../../packages/di/tests/di.test.ts#L368-L434). Detection scope and eager-validation limits are source-derived.
 
 ### Requirement: Bootstrap Provenance Service
 
