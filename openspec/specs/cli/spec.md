@@ -131,21 +131,16 @@ The loader SHALL check only `uny.config.js` then `uny.config.mjs` directly insid
 
 ### Requirement: Config export selection and validation
 
-The loader SHALL choose `mod.default ?? mod.provider`. It SHALL accept a function, or a truthy object with a `definitions` or `extensions` property whose `typeof` is `object` (a shallow shape check; null-valued properties satisfy it). A falsy export SHALL throw a must-export-default error. Other invalid exports SHALL throw a type-identifying error. Import failures SHALL be wrapped with file path and message.
-
-#### Scenario: Named provider fallback
-
-- **WHEN** the imported module has a nullish default and a valid named `provider` export
-- **THEN** the named export SHALL be selected; a non-nullish invalid default SHALL NOT fall back to that named export.
+For default-exported configuration, the loader SHALL accept a function, or a truthy object with a `definitions` or `extensions` property whose `typeof` is `object` (a shallow shape check; null-valued properties satisfy it). Other invalid exports SHALL produce the errors below. Import failures SHALL be wrapped with file path and message.
 
 #### Scenario: Numeric export
 
 - **WHEN** the module exports default `42`
 - **THEN** loading SHALL reject it with the invalid-export error identifying type `number`.
 
-#### Scenario: Falsy default export
+#### Scenario: Falsy configuration export
 
-- **WHEN** the selected export is falsy (null, undefined, 0, or empty string)
+- **WHEN** the module has no named exports and its default export is null, undefined, 0, or an empty string
 - **THEN** the loader SHALL throw `${filePath} must export default a Provider or a transform function`.
 
 #### Scenario: Import failure wrapping
@@ -156,6 +151,8 @@ The loader SHALL choose `mod.default ?? mod.provider`. It SHALL accept a functio
 #### Evidence
 
 [export validation](../../../packages/cli/src/loader.ts#L47-L87), [invalid export test](../../../packages/cli/tests/loader.test.ts#L41-L48), [invalid fixture](../../../packages/cli/tests/fixtures/bad-export/uny.config.js#L1), [binary error test](../../../packages/cli/tests/cli.inspect.test.ts#L69-L76).
+
+The alternative named-export syntax is intentionally outside this baseline's requirements. This omission does not require rejecting it or changing the loader.
 
 ### Requirement: Provider wrapping and transform return semantics
 
@@ -298,7 +295,7 @@ The root `bin/uny.ts` script SHALL NOT dispatch the package inspect command. Its
 
 ### Requirement: Root script config loader differences
 
-The root script SHALL try only `${projectDir}/uny.config.js` via a manually constructed `file://` URL, select only the default export, and silently return null on import failure or unsupported exports. It SHALL accept functions or truthy objects with a `definitions` property, without the package loader's object-valued property check or `.mjs`, named-provider fallback, or explicit error diagnostics.
+The root script SHALL try only `${projectDir}/uny.config.js` via a manually constructed `file://` URL, select only the default export, and silently return null on import failure or unsupported exports. It SHALL accept functions or truthy objects with a `definitions` property, without the package loader's object-valued property check, `.mjs` discovery, or explicit error diagnostics.
 
 #### Scenario: Root script ignores an invalid default export
 
