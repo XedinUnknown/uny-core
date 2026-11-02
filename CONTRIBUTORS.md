@@ -6,40 +6,45 @@ This branch contains implemented DI/core foundations and a partial CLI foundatio
 
 This project uses a Docker Compose development container.
 
-The host needs Make and Docker with Compose; Node.js and pnpm run inside the
-container. Start a fresh checkout with:
+The host needs Docker with Compose. Make, Node.js, and pnpm run inside the
+development container. After creating `.env` and building the image as described
+below, run:
 
 ```bash
-make setup
+docker compose run --rm dev make setup
 ```
 
-Setup creates `.env` only if absent, validates Compose configuration, builds the
-development image, installs dependencies using the frozen lockfile, and installs
-the configured agent integrations. Existing `.env` values are preserved. Restart
-OpenCode after setup installs or refreshes agent integrations.
+Setup creates `.env` from `.env.example` only if absent, installs dependencies
+using the frozen lockfile, and installs configured agent integrations. Existing
+`.env` values are preserved. Restart OpenCode after installing or refreshing
+integrations. Make does not manage images or the Compose lifecycle. The initial
+host-side `.env` copy is still needed to configure Compose before the container
+can start.
 
-Use these targets for development:
+Run these targets inside the container (or through `docker compose run --rm dev make TARGET`):
 
 | Target | Behavior |
 |---|---|
 | `make setup` (also the default) | Prepare dependencies and agent integrations |
 | `make build` | Prepare dependencies and build all packages |
 | `make test` | Prepare dependencies and run tests, which build required packages through Nx |
-| `make dev` | Prepare dependencies and start an idle development container |
-| `make down` | Stop the Compose environment without installing or building anything |
+| `make dev` | Prepare dependencies and keep the development environment running |
 
-`build`, `test`, and `dev` share the `dependencies` prerequisite, which validates
-Compose configuration, builds the development image, and installs pinned packages.
+`build`, `test`, and `dev` share the `dependencies` prerequisite, which installs pinned packages.
 They do not install agent integrations. Prerequisites rerun on each Make invocation;
-Docker and pnpm reuse their caches. A combined `make build test` prepares shared
-prerequisites once. `make dev` starts neither an application host nor a watcher.
+pnpm reuses its cache. A combined `make build test` prepares shared
+prerequisites once. `make dev` stays running until interrupted; it starts neither
+an application host nor a watcher. The Compose development service runs this
+target by default. Start it with `docker compose up -d dev`, then run commands
+with `docker compose exec dev make build` or `docker compose exec dev make test`.
 
-Docker-backed build and test targets can run in CI with Docker Compose available.
-CI that already provides Node.js and pnpm can continue using the package commands
-directly. Dependency installation executes package scripts with write access to the
-checkout; do not expose secrets to untrusted PR code.
+The Makefile is not Docker-specific. `make .env` needs only Make and shell
+utilities; the package targets also need Node.js and pnpm. CI with those tools
+available can run `make build` or `make test` directly without Docker or agent
+integration installation. Dependency installation executes package scripts with
+write access to the checkout; do not expose secrets to untrusted PR code.
 
-The equivalent underlying commands remain available below.
+Container provisioning and the underlying package commands remain available below.
 
 Copy the local environment file first:
 

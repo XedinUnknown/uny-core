@@ -6,12 +6,12 @@ ENV PNPM_HOME=/pnpm
 ENV PATH=/pnpm:$PATH
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates git openssh-client \
+  && apt-get install -y --no-install-recommends ca-certificates git make openssh-client \
   && rm -rf /var/lib/apt/lists/*
 
 RUN corepack enable
 
-CMD ["pnpm", "--version"]
+CMD ["make", "dev"]
 
 # ── builder: compile all packages ──
 FROM node:22-bookworm-slim AS builder
