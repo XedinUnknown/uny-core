@@ -6,6 +6,41 @@ This branch contains implemented DI/core foundations and a partial CLI foundatio
 
 This project uses a Docker Compose development container.
 
+The host needs Make and Docker with Compose; Node.js and pnpm run inside the
+container. Start a fresh checkout with:
+
+```bash
+make setup
+```
+
+Setup creates `.env` only if absent, validates Compose configuration, builds the
+development image, installs dependencies using the frozen lockfile, and installs
+the configured agent integrations. Existing `.env` values are preserved. Restart
+OpenCode after setup installs or refreshes agent integrations.
+
+Use these targets for development:
+
+| Target | Behavior |
+|---|---|
+| `make setup` (also the default) | Prepare dependencies and agent integrations |
+| `make build` | Prepare dependencies and build all packages |
+| `make test` | Prepare dependencies and run tests, which build required packages through Nx |
+| `make dev` | Prepare dependencies and start an idle development container |
+| `make down` | Stop the Compose environment without installing or building anything |
+
+`build`, `test`, and `dev` share the `dependencies` prerequisite, which validates
+Compose configuration, builds the development image, and installs pinned packages.
+They do not install agent integrations. Prerequisites rerun on each Make invocation;
+Docker and pnpm reuse their caches. A combined `make build test` prepares shared
+prerequisites once. `make dev` starts neither an application host nor a watcher.
+
+Docker-backed build and test targets can run in CI with Docker Compose available.
+CI that already provides Node.js and pnpm can continue using the package commands
+directly. Dependency installation executes package scripts with write access to the
+checkout; do not expose secrets to untrusted PR code.
+
+The equivalent underlying commands remain available below.
+
 Copy the local environment file first:
 
 ```bash
