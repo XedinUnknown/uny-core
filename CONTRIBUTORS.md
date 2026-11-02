@@ -70,8 +70,8 @@ There is no `serena` Docker Compose service in this project. `mcp-compose` is no
 
 Phase 0 AI tooling configuration is included for agent-driven implementation:
 
-- `agents.yaml` declares the agentdeps-managed config-based modularity skill dependency.
-- `.config/agentdeps/config.yaml` configures agentdeps for project-local OpenCode installs.
+- `agents.yaml` declares the config-based modularity skill dependency and the project's [agents-config](https://github.com/XedinUnknown/agents-config) installation settings. Skills are copied into `.agents/skills`, which OpenCode reads directly.
+- `agents-lock.json` pins skill sources; generated skill copies are ignored by Git.
 - `opencode.json` configures OpenCode permissions, `plan`, `build`, and `code` agents, and the Serena MCP server.
 - `.agents/` contains agentloom canonical agent definitions.
 - `mcp-compose.json` remains available for non-Serena MCP gateways.
@@ -79,5 +79,7 @@ Phase 0 AI tooling configuration is included for agent-driven implementation:
 Install configured agent dependencies from the dev container:
 
 ```bash
-docker compose run --rm dev pnpm exec agentdeps install
+docker compose run --rm dev pnpm exec agents-config install
 ```
+
+The tool is installed directly from the upstream `0.1.x` Git branch, with its resolved commit pinned in `pnpm-lock.yaml`. Use `agents-config update` instead of `install` after changing skill dependency declarations or to refresh their locked revisions. Restart OpenCode after installing or updating skills.

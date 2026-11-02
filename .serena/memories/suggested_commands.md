@@ -27,7 +27,7 @@ cp .env.example .env
 docker compose config
 docker compose build dev
 docker compose run --rm dev pnpm install
-docker compose run --rm dev pnpm exec agentdeps install
+docker compose run --rm dev pnpm exec agents-config install
 ```
 
 Lifecycle: `docker compose up -d dev`, `docker compose logs -f dev`, `docker compose down`.

@@ -1,0 +1,44 @@
+{
+  "version": 2,
+  "skills": {
+    "config-based-modularity": {
+      "repo": "Dhii/containers",
+      "ref": "0.3.x",
+      "commit": "c656b2155e96367c628af9efa30a00cada825428"
+    }
+  },
+  "agents": {},
+  "targets": {
+    "interop": {
+      "handler": "interop",
+      "state": {
+        "managedIgnoreDirs": [
+          ".agents/skills"
+        ],
+        "installs": {
+          ".agents/skills/config-based-modularity": {
+            "kind": "skills",
+            "name": "config-based-modularity",
+            "method": "copy",
+            "contentHash": "b4b2ac4990648761fb5e92390088546ab2ffa64b77a532a447b1f0c78ffd267f",
+            "installedAt": "2026-11-02T16:50:30.942Z",
+            "updatedAt": "2026-11-02T16:50:30.942Z"
+          }
+        }
+      }
+    }
+  },
+  "dependencies": [
+    {
+      "dependency": {
+        "repo": "Dhii/containers",
+        "ref": "0.3.x",
+        "skills": [
+          "config-based-modularity"
+        ],
+        "agents": false
+      },
+      "commit": "c656b2155e96367c628af9efa30a00cada825428"
+    }
+  ]
+}

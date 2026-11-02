@@ -1,5 +1,11 @@
+clone_method: https
+install_method: copy
+manage_gitignore: true
+targets:
+  interop: true
 dependencies:
   - repo: Dhii/containers
     ref: 0.3.x
     skills:
       - config-based-modularity
+    agents: false

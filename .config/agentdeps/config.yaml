@@ -1,4 +1,0 @@
-clone_method: https
-install_method: copy
-agents:
-  - opencode
