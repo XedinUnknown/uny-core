@@ -14,6 +14,7 @@
     "version": "lerna version"
   },
   "devDependencies": {
+    "@fission-ai/openspec": "1.16.0",
     "@types/node": "^26.0.0",
     "@xedinunknown/agents-config": "github:XedinUnknown/agents-config#0.1.x",
     "lerna": "^9.0.7",
