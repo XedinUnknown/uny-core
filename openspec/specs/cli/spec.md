@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Record the implemented CLI, configuration loading, and composition inspection behavior at commit `49e7a62`, including differences between the package executable and the root script. This is a descriptive baseline, not a specification of planned functionality. Requirements refer to the package CLI unless explicitly scoped to the root script.
+Record the implemented CLI, configuration loading, and composition inspection behavior at commit `5c0e1b5`, including differences between the package executable and the root script. This is a descriptive baseline, not a specification of planned functionality. Requirements refer to the package CLI unless explicitly scoped to the root script.
 
 ## Requirements
 

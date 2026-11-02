@@ -1,9 +1,14 @@
 # OpenSpec Baseline
 
 The initial specs describe implementation committed at
-[`49e7a623a8fb9e137024582d9efff3a13a1f1d17`](https://github.com/UN1Q-com/uny/tree/49e7a623a8fb9e137024582d9efff3a13a1f1d17).
+[`5c0e1b5`](https://github.com/XedinUnknown/uny-core/tree/5c0e1b5).
 They record what exists, including limitations, rather than approve the current
 design or promise planned functionality.
+
+This setup was ported from the former `UN1Q-com/uny` OpenSpec exercise.
+The destination's `packages/` and `bin/` contents match the original baseline
+implementation. The named `provider` export alternative was deliberately
+excluded from requirements; its implementation remains unchanged.
 
 ## Process
 

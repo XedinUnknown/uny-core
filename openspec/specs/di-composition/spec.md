@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Record the public composition, definition-helper, and provenance behavior implemented by `@uny/di` at commit `49e7a62`. Requirements describe the committed source and tests, not planned design contracts. Evidence notes distinguish tested examples from source-derived details.
+Record the public composition, definition-helper, and provenance behavior implemented by `@uny/di` at commit `5c0e1b5`. Requirements describe the committed source and tests, not planned design contracts. Evidence notes distinguish tested examples from source-derived details.
 
 ## Requirements
 

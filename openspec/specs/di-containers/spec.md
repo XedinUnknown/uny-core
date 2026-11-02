@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Record the container, bootstrap, cycle-detection, and resolution-error behavior implemented by `@uny/di` at commit `49e7a62`, including existing limitations. Requirements are grounded in committed source and tests rather than design documents.
+Record the container, bootstrap, cycle-detection, and resolution-error behavior implemented by `@uny/di` at commit `5c0e1b5`, including existing limitations. Requirements are grounded in committed source and tests rather than design documents.
 
 ## Requirements
 

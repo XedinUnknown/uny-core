@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Record the implemented `@uny/core` provider's configuration keys, derived paths, and environment behavior at commit `49e7a62`. This baseline describes source and test behavior only, without adding application execution features.
+Record the implemented `@uny/core` provider's configuration keys, derived paths, and environment behavior at commit `5c0e1b5`. This baseline describes source and test behavior only, without adding application execution features.
 
 ## Requirements
 
