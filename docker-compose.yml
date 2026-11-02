@@ -12,6 +12,7 @@ services:
       PNPM_HOME: ${PNPM_HOME}
       npm_config_store_dir: ${PNPM_STORE}
       XDG_CONFIG_HOME: ${XDG_CONFIG_HOME}
+    command: ["make", "dev"]
 
   uny:
     build: { context: ., target: runtime }

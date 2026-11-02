@@ -11,7 +11,7 @@ RUN apt-get update \
 
 RUN corepack enable
 
-CMD ["make", "dev"]
+CMD ["pnpm", "--version"]
 
 # ── builder: compile all packages ──
 FROM node:22-bookworm-slim AS builder
