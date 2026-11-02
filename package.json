@@ -15,7 +15,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.0.0",
-    "agentdeps": "0.5.1",
+    "@xedinunknown/agents-config": "github:XedinUnknown/agents-config#0.1.x",
     "lerna": "^9.0.7",
     "nx": "^23.0.0",
     "tsup": "^8.5.1",

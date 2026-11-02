@@ -11,9 +11,9 @@ importers:
       '@types/node':
         specifier: ^26.0.0
         version: 26.0.0
-      agentdeps:
-        specifier: 0.5.1
-        version: 0.5.1
+      '@xedinunknown/agents-config':
+        specifier: github:XedinUnknown/agents-config#0.1.x
+        version: https://codeload.github.com/XedinUnknown/agents-config/tar.gz/080a552ab75fb181462144882e37cb3a2c111c95
       lerna:
         specifier: ^9.0.7
         version: 9.0.7(@types/node@26.0.0)
@@ -1009,6 +1009,12 @@ packages:
   '@types/normalize-package-data@2.4.4':
     resolution: {integrity: sha512-37i+OaWTh9qeK4LSHPsyRC7NahnGotNuZvjLSgcPzblpHB3rrCJxAOgI5gCdKm7coonsaX1Of0ILiTcnZjbfxA==}
 
+  '@xedinunknown/agents-config@https://codeload.github.com/XedinUnknown/agents-config/tar.gz/080a552ab75fb181462144882e37cb3a2c111c95':
+    resolution: {tarball: https://codeload.github.com/XedinUnknown/agents-config/tar.gz/080a552ab75fb181462144882e37cb3a2c111c95}
+    version: 0.0.0
+    engines: {node: '>=22'}
+    hasBin: true
+
   '@yarnpkg/lockfile@1.1.0':
     resolution: {integrity: sha512-GpSwvyXOcOOlV70vbnzjj4fW5xW/FdUF6nQEt1ENy7m4ZCczi1+/buVUPAqmGfqznsORNFzUMjctTIp8a9tuCQ==}
 
@@ -1039,10 +1045,6 @@ packages:
   agent-base@7.1.4:
     resolution: {integrity: sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ==}
     engines: {node: '>= 14'}
-
-  agentdeps@0.5.1:
-    resolution: {integrity: sha512-T9z0bEn3h69QINGcAxHE01axrOCYSLn6gP6h9jbK+d6CeJjznrgZi4xipmSSpBk6mxlveujBEQXtcSINycv3rQ==}
-    hasBin: true
 
   aggregate-error@3.1.0:
     resolution: {integrity: sha512-4I7Td01quW/RpocfNayFdFVk1qSuoh0E7JrbRJ16nH01HhKFQ88INq9Sd+nd72zqRySlr9BmDA8xlEJ6vJMrYA==}
@@ -1233,6 +1235,10 @@ packages:
   combined-stream@1.0.8:
     resolution: {integrity: sha512-FQN4MRfuJeHf7cBbBMJFXhKSDq+2kAArBlmRBvcvFE5BB1HZKXtSFASDhdlz9zOYwxh8lDdnvmMOe/+5cdoEdg==}
     engines: {node: '>= 0.8'}
+
+  commander@14.0.3:
+    resolution: {integrity: sha512-H+y0Jo/T1RZ9qPP4Eh1pkcQcLRglraJaSLoyOtHxu6AapkjWVCy2Sit1QQ4x3Dng8qDlSsZEet7g5Pq06MvTgw==}
+    engines: {node: '>=20'}
 
   commander@4.1.1:
     resolution: {integrity: sha512-NOKm8xhkzAjzFx8B2v5OAHT+u5pRQc2UCa2Vq9jYL/31o2wi9mxBA7LIFs3sV5VSC49z6pEhfbMULvShKj26WA==}
@@ -3648,6 +3654,11 @@ snapshots:
 
   '@types/normalize-package-data@2.4.4': {}
 
+  '@xedinunknown/agents-config@https://codeload.github.com/XedinUnknown/agents-config/tar.gz/080a552ab75fb181462144882e37cb3a2c111c95':
+    dependencies:
+      commander: 14.0.3
+      yaml: 2.9.0
+
   '@yarnpkg/lockfile@1.1.0': {}
 
   '@zkochan/js-yaml@0.0.7':
@@ -3668,8 +3679,6 @@ snapshots:
   add-stream@1.0.0: {}
 
   agent-base@7.1.4: {}
-
-  agentdeps@0.5.1: {}
 
   aggregate-error@3.1.0:
     dependencies:
@@ -3847,6 +3856,8 @@ snapshots:
   combined-stream@1.0.8:
     dependencies:
       delayed-stream: 1.0.0
+
+  commander@14.0.3: {}
 
   commander@4.1.1: {}
 

@@ -3,3 +3,4 @@ dependencies:
     ref: 0.3.x
     skills:
       - config-based-modularity
+    agents: false
