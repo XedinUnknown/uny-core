@@ -17,9 +17,12 @@ Run setup through Docker Compose. The host runs Docker; `pnpm`, Node.js, and age
 ```bash
 docker compose config
 docker compose build dev
-docker compose run --rm dev pnpm install
-docker compose run --rm dev pnpm --version
+docker compose run --rm dev make setup
 ```
+
+See the [Makefile](Makefile) for development targets. Run them inside the container,
+or directly where Make, Node.js, and pnpm are available. Restart OpenCode after
+setup installs or refreshes agent integrations.
 
 The project directory is bind-mounted into the container at `WORKDIR`, so files created by container commands are shared with the host development machine. Dependency artifacts such as `node_modules/` remain ignored by Git.
 
