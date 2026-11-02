@@ -46,10 +46,10 @@ The provider SHALL define `app/srcDir`, `app/libDir`, and `app/workDir` by resol
 - **WHEN** config root is `/var/uny` but an additional override container supplies `app/rootDir` as `/tmp/test-project`
 - **THEN** `app/srcDir` SHALL resolve to `/tmp/test-project/src` and the unchanged version SHALL remain `3.0.0`.
 
-#### Scenario: Root contains a trailing slash
+#### Scenario: Root contains a trailing slash (current behavior)
 
 - **WHEN** the resolving container supplies `/project/` as `app/rootDir`
-- **THEN** the derived definitions SHALL return `/project//src`, `/project//lib`, and `/project//work`, without removing the doubled separator.
+- **THEN** the derived definitions currently return `/project//src`, `/project//lib`, and `/project//work`, because string interpolation appends the suffix without normalizing separators. This records observed behavior at the baseline commit; it is a limitation, not an intentional guarantee.
 
 #### Evidence
 

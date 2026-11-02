@@ -65,21 +65,37 @@ Composition SHALL retain extensions independently of definition overrides and ch
 
 `composeProviders` SHALL return a `Map<string, KeyProvenance>` containing each own enumerable string key encountered in provider definition or extension records. Each entry SHALL contain `key`, ordered `definedBy` provider names including overridden definitions, and ordered `extendedBy` provider names. Missing contribution kinds SHALL have empty arrays; the last `definedBy` name identifies the winning contributed definition.
 
-#### Scenario: Record Override and Extension History
+#### Scenario: Record Override History
 
 - **WHEN** `A`, `B`, and `C` define `key` in that order and `B` and `C` extend it
 - **THEN** its provenance contains `definedBy: ["A", "B", "C"]` and `extendedBy: ["B", "C"]`
-- **THEN** an extension-only key has an empty `definedBy` array
+
+#### Scenario: Extension-Only Key Has Empty Definition History
+
+- **WHEN** a key is only extended and never defined across all providers
+- **THEN** its provenance entry has an empty `definedBy` array and a non-empty `extendedBy` array
 
 #### Scenario: Order Provenance Entries by First Encounter
 
 - **WHEN** `A` defines `b` then `a` and extends `c`, and later `B` defines `c` then `d`
 - **THEN** the provenance map's keys are `["b", "a", "c", "d"]`, following first encounter order and visiting each provider's definition keys before its extension keys
 
+#### Scenario: Register the Same Provider Name Twice
+
+- **WHEN** the map contains two entries sharing the same provider name string and each defines `key`
+- **THEN** `definedBy` records both occurrences of that name in order, and the last definition wins
+- **THEN** `composeProviders` does not deduplicate map entries by name; it traverses whatever the `Map` iteration order supplies
+
+#### Scenario: Pass a Previously Composed Provider Into a Second Composition
+
+- **WHEN** the `ComposedProvider` returned by one `composeProviders` call is used as a provider entry in a subsequent `composeProviders` call
+- **THEN** the outer composition traverses the composed provider's `definitions` and `extensions` records as plain objects, recording the entry's map key as the provider name in the outer provenance
+- **THEN** the inner provenance from the first call is not merged into the outer call's provenance map; each call produces its own independent provenance
+
 #### Evidence
 
 - Source: [provenance types](../../../packages/di/src/types.ts#L17-L35), [collection](../../../packages/di/src/compose.ts#L20-L44).
-- Tests: [override and extension provenance](../../../packages/di/tests/di.test.ts#L608-L643). Entry ordering and extension-only provenance are source-derived.
+- Tests: [override and extension provenance](../../../packages/di/tests/di.test.ts#L608-L643). Entry ordering, extension-only provenance, duplicate-name handling, and nested composition behavior are source-derived.
 
 ### Requirement: Callable Factory Definitions
 
@@ -135,7 +151,9 @@ Composition SHALL retain extensions independently of definition overrides and ch
 
 ### Requirement: Current Composition Boundaries
 
-Composition and helpers SHALL use synchronous calls and ordinary JavaScript records, arrays, and maps without enforcing deep immutability or validating the dependency graph. Returned metadata SHALL remain mutable. Ordinary object property semantics SHALL apply rather than a guaranteed prototype-safe key space.
+These scenarios record current source behavior. They are not intentional design guarantees: they describe what the implementation does today, including the absence of validation and isolation that a future version could add without violating stated requirements.
+
+Composition and helpers SHALL use synchronous calls and ordinary JavaScript records, arrays, and maps. They SHALL NOT enforce deep immutability or validate the dependency graph. Returned metadata SHALL remain mutable at this time. Ordinary object property semantics SHALL apply rather than a guaranteed prototype-safe key space.
 
 #### Scenario: Change a Factory Dependency Array
 

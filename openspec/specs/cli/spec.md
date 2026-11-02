@@ -69,24 +69,24 @@ The parser SHALL count each exact `-v` and `-q` separately, and consume the next
 
 Each non-dash-prefixed token not consumed as an option value SHALL replace the command only while the current command equals `inspect`. Once a different command is selected, subsequent positional tokens SHALL be ignored. Exact `--help`, unless consumed as an option value, SHALL print usage and return from `main` before any metadata reading, config loading, or dispatch.
 
-#### Scenario: Inspect is a sentinel rather than a locked first command
+#### Scenario: First positional token replaces the inspect sentinel
 
 - **WHEN** arguments are `inspect unknown-command ignored`
-- **THEN** the selected command SHALL be `unknown-command`, not `inspect`, and successful bootstrap SHALL be followed by an unknown-command error.
+- **THEN** the selected command SHALL be `unknown-command`, not `inspect`
+
+#### Scenario: Unknown command after bootstrap
+
+- **WHEN** the parsed command is not `inspect` and no `--help` flag was consumed
+- **THEN** dispatch SHALL throw `unknown command: ${commandName}` after bootstrap completes
 
 #### Scenario: Help bypasses configuration errors
 
 - **WHEN** arguments include an unconsumed `--help`, even with an unknown command or an invalid project configuration
 - **THEN** usage SHALL be printed without loading that configuration or dispatching the command.
 
-#### Scenario: Unknown command after bootstrap
-
-- **WHEN** no `--help` flag is present and the command is not `inspect`
-- **THEN** dispatch SHALL throw `unknown command: ${commandName}` after bootstrap completes.
-
 #### Evidence
 
-[command sentinel and help parsing](../../../packages/cli/src/flags.ts#L55-L76), [help short circuit](../../../packages/cli/src/main.ts#L31-L37), [dispatch and usage](../../../packages/cli/src/main.ts#L111-L155), [help and unknown-command tests](../../../packages/cli/tests/cli.inspect.test.ts#L12-L20), [unknown command assertion](../../../packages/cli/tests/cli.inspect.test.ts#L93-L100).
+[command sentinel and help parsing](../../../packages/cli/src/flags.ts#L55-L76), [help short circuit](../../../packages/cli/src/main.ts#L31-L37), [dispatch and unknown-command error](../../../packages/cli/src/main.ts#L111-L130), [help and unknown-command tests](../../../packages/cli/tests/cli.inspect.test.ts#L12-L20), [unknown command assertion](../../../packages/cli/tests/cli.inspect.test.ts#L93-L100).
 
 ### Requirement: Initial app configuration and providers
 
@@ -202,7 +202,7 @@ After transformation, the CLI SHALL call `workingMap.set('cli-overrides', ...)` 
 
 ### Requirement: Required core checks
 
-Before bootstrap and dispatch, the CLI SHALL reject a working map without the `core` provider, then compose the map and attempt to resolve `app/rootDir` through a temporary `DelegatingContainer`. A caught `MissingKeyError` becomes the required-key diagnostic; other errors propagate. Resolution success is checked, not value type or origin.
+Before bootstrap and dispatch, the CLI SHALL reject a working map without the `core` provider, then compose the map and attempt to resolve only `app/rootDir` through a temporary `DelegatingContainer`. This temporary container is created solely for this check and is discarded before `bootstrap` is called; it does not resolve any other key. A caught `MissingKeyError` becomes the required-key diagnostic; other errors propagate. Resolution success is checked, not value type or origin.
 
 #### Scenario: Core provider removed
 
@@ -220,7 +220,7 @@ Before bootstrap and dispatch, the CLI SHALL reject a working map without the `c
 
 ### Requirement: Provenance-based inspection
 
-Inspect SHALL resolve `app/provenance`, iterate its Map entries, omit `app/provenance` itself, and sort rows with `a.key.localeCompare(b.key)`. For each row it SHALL select the last `definedBy` entry as winner (using `-` when absent or falsy), preserve `extendedBy` order, and default missing histories to empty arrays. Service values SHALL NOT be resolved.
+Inspect SHALL resolve only `app/provenance` from the container. It SHALL iterate the returned Map's entries, omit the `app/provenance` key itself, and sort rows with `a.key.localeCompare(b.key)`. For each row it SHALL select the last `definedBy` entry as winner (using `-` when absent or falsy), preserve `extendedBy` order, and default missing histories to empty arrays. The definition associated with each listed key SHALL NOT be resolved; inspect reads history metadata only.
 
 #### Scenario: Multiple definitions and extensions
 

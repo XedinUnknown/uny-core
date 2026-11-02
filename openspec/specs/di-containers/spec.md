@@ -85,8 +85,12 @@ The root package SHALL export `DelegatingContainer`, `CachingContainer`, `ProxyC
 #### Scenario: Retry After a Synchronous Failure
 
 - **WHEN** inner resolution throws synchronously and the same key is later requested again
-- **THEN** the caching container retries inner resolution
-- **THEN** a returned promise is cached immediately instead, even if it later rejects
+- **THEN** the caching container retries inner resolution rather than caching the failure
+
+#### Scenario: Cache a Returned Promise Immediately
+
+- **WHEN** inner resolution returns a promise
+- **THEN** that promise is cached immediately on the first resolve, even if it later rejects, so subsequent resolves return the same promise reference without calling the inner container again
 
 #### Scenario: Query Metadata After Caching a Result
 
@@ -200,7 +204,14 @@ The root package SHALL export `DelegatingContainer`, `CachingContainer`, `ProxyC
 
 ### Requirement: Bootstrap Lookup and Cache Wiring
 
-`bootstrap(providers, additionalContainers = [])` SHALL compose providers and return a caching container over a composite of additional containers in supplied order followed by the cycle-detected provider container. It SHALL supply provider definitions and extensions a proxy to the full cached application container for nested lookup. Additional containers SHALL take priority over provider keys; their results SHALL pass through the outer cache.
+`bootstrap(providers, additionalContainers = [])` SHALL compose providers and return a container with the following four observable behaviors:
+
+1. **Composition**: providers are composed into definition and extension records before any resolution.
+2. **Lookup/precedence**: additional containers take priority over provider-defined keys; provider definitions and extensions receive a reference to the full application container so they can resolve any key, including keys from additional containers.
+3. **Caching**: each resolved value is cached so subsequent resolves of the same key return the first result without re-invoking the definition.
+4. **Cycle detection**: a direct or indirect circular dependency among provider keys throws `CircularDependencyError` on first resolution; bootstrap itself returns without resolving any key eagerly.
+
+The internal arrangement of decorators that achieves these behaviors is an implementation detail and is not required.
 
 #### Scenario: Override a Provider From an Additional Container
 
