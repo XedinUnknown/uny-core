@@ -6,46 +6,6 @@ This branch contains implemented DI/core foundations and a partial CLI foundatio
 
 This project uses a Docker Compose development container.
 
-The host needs Docker with Compose. Make, Node.js, and pnpm run inside the
-development container. After creating `.env` and building the image as described
-below, run:
-
-```bash
-docker compose run --rm dev make setup
-```
-
-Setup creates `.env` from `.env.example` only if absent, installs dependencies
-using the frozen lockfile, and installs configured agent integrations. Existing
-`.env` values are preserved. Restart OpenCode after installing or refreshing
-integrations. Make does not manage images or the Compose lifecycle. The initial
-host-side `.env` copy is still needed to configure Compose before the container
-can start.
-
-Run these targets inside the container (or through `docker compose run --rm dev make TARGET`):
-
-| Target | Behavior |
-|---|---|
-| `make setup` (also the default) | Prepare dependencies and agent integrations |
-| `make build` | Prepare dependencies and build all packages |
-| `make test` | Prepare dependencies and run tests, which build required packages through Nx |
-| `make dev` | Prepare dependencies and keep the development environment running |
-
-`build`, `test`, and `dev` share the `dependencies` prerequisite, which installs pinned packages.
-They do not install agent integrations. Prerequisites rerun on each Make invocation;
-pnpm reuses its cache. A combined `make build test` prepares shared
-prerequisites once. `make dev` stays running until interrupted; it starts neither
-an application host nor a watcher. The Compose development service runs this
-target by default. Start it with `docker compose up -d dev`, then run commands
-with `docker compose exec dev make build` or `docker compose exec dev make test`.
-
-The Makefile is not Docker-specific. `make .env` needs only Make and shell
-utilities; the package targets also need Node.js and pnpm. CI with those tools
-available can run `make build` or `make test` directly without Docker or agent
-integration installation. Dependency installation executes package scripts with
-write access to the checkout; do not expose secrets to untrusted PR code.
-
-Container provisioning and the underlying package commands remain available below.
-
 Copy the local environment file first:
 
 ```bash
@@ -57,9 +17,12 @@ Run setup through Docker Compose. The host runs Docker; `pnpm`, Node.js, and age
 ```bash
 docker compose config
 docker compose build dev
-docker compose run --rm dev pnpm install
-docker compose run --rm dev pnpm --version
+docker compose run --rm dev make setup
 ```
+
+See the [Makefile](Makefile) for development targets. Run them inside the container,
+or directly where Make, Node.js, and pnpm are available. Restart OpenCode after
+setup installs or refreshes agent integrations.
 
 The project directory is bind-mounted into the container at `WORKDIR`, so files created by container commands are shared with the host development machine. Dependency artifacts such as `node_modules/` remain ignored by Git.
 
