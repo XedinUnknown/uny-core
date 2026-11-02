@@ -62,46 +62,5 @@
       "rm -rf*": "ask",
       "docker system prune*": "ask"
     }
-  },
-  "agent": {
-    "plan": {
-      "model": "anthropic/claude-opus-4-8",
-      "mode": "primary",
-      "color": "#AE6FD3",
-      "permission": {
-        "edit": "deny",
-        "task": "allow"
-      }
-    },
-    "build": {
-      "model": "anthropic/claude-sonnet-4-6",
-      "mode": "all",
-      "color": "#5C9CF5",
-      "permission": {
-        "edit": "allow",
-        "bash": {
-          "*": "allow",
-          "git push*": "ask",
-          "git reset --hard*": "ask",
-          "rm -rf*": "ask",
-          "docker system prune*": "ask"
-        }
-      }
-    },
-    "code": {
-      "model": "anthropic/claude-haiku-4-5",
-      "mode": "primary",
-      "color": "#FFE992",
-      "permission": {
-        "edit": "allow",
-        "task": "deny",
-        "bash": {
-          "*": "allow",
-          "git push*": "ask",
-          "git reset --hard*": "ask",
-          "rm -rf*": "ask"
-        }
-      }
-    }
   }
 }
