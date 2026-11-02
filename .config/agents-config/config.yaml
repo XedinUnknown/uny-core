@@ -1,5 +1,0 @@
-clone_method: https
-install_method: copy
-manage_gitignore: true
-targets:
-  interop: true
