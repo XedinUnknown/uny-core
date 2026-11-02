@@ -11,8 +11,12 @@ dependencies: .env
 agents: dependencies
 	pnpm exec agents-config install
 
+.PHONY: openspec
+openspec: dependencies
+	pnpm exec openspec update --tools agents
+
 .PHONY: setup
-setup: agents
+setup: agents openspec
 	pnpm --version
 
 .PHONY: build
