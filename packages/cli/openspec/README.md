@@ -4,7 +4,7 @@ This directory contains the capability specs and validation configuration for th
 
 ## Specs
 
-- [CLI](specs/cli/spec.md): flags, config loading, inspection, and the distinct root executable skeleton.
+- [CLI](specs/cli/spec.md): flags, config loading, and inspection.
 
 ## Baseline
 
@@ -18,15 +18,21 @@ repository root.
 
 ## Commands
 
-Validate specs for this package (run from this package directory):
+Validate specs for this package via the package script (runs from the workspace root):
+
+```bash
+docker compose run --rm -e OPENSPEC_TELEMETRY=0 dev pnpm --filter @uny/cli run spec:validate
+```
+
+Or from inside the package directory using the workspace-root binary:
 
 ```bash
 docker compose run --rm -e OPENSPEC_TELEMETRY=0 dev \
-  bash -c 'cd packages/cli && node_modules/.bin/openspec validate --all --strict'
+  bash -c 'cd packages/cli && ../../node_modules/.bin/openspec validate --all --strict'
 ```
 
-Or from the repository root via the Makefile:
+Or validate all packages at once from the repository root via the Makefile:
 
 ```bash
-make validate-specs
+docker compose run --rm -e OPENSPEC_TELEMETRY=0 dev make validate-specs
 ```

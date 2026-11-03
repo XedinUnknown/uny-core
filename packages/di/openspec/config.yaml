@@ -1,8 +1,14 @@
 schema: spec-driven
 
 context: |
+  Uny is an exploration-first natural-language instruction runner whose first target is
+  mobile app testing through Appium and WebDriverIO. It is built around config-based
+  provider modularity: providers contribute keyed lazy definitions and extensions, and a
+  composed container is the runtime source of truth.
+
   The `@uny/di` specs describe the composition primitives, container behaviours, and
-  bootstrap wiring as living capability requirements derived from the committed implementation.
+  bootstrap wiring that underpin Uny's provider system. These are living capability
+  requirements derived from the committed implementation at the baseline commit.
   Preserve the implementation-first baseline distinction: plans, memories, and design
   documents are not requirement sources. Propose future behaviour explicitly as changes rather
   than silently expanding the baseline.

@@ -30,12 +30,18 @@ build: dependencies
 test: dependencies
 	pnpm test
 
-# Validate each package root independently with the shared CLI.
+# Validate every openspec root (repo root + packages/*) that contains openspec/config.yaml.
+# Discovers roots dynamically; excludes node_modules, .git, generated, and vendor trees.
 .PHONY: validate-specs
 validate-specs: dependencies
-	@set -e; for pkg in di core cli; do \
-		echo "--- openspec validate: packages/$$pkg ---"; \
-		(cd packages/$$pkg && OPENSPEC_TELEMETRY=0 ../../node_modules/.bin/openspec validate --all --strict); \
+	@set -e; \
+	roots=$$(find . \
+	  \( -name node_modules -o -name .git -o -name generated -o -name vendor \) -prune \
+	  -o -name config.yaml -path "*/openspec/config.yaml" -print \
+	  | sed 's|/openspec/config\.yaml$$||' | sort); \
+	for root in $$roots; do \
+	  echo "--- openspec validate: $$root ---"; \
+	  (cd "$$root" && OPENSPEC_TELEMETRY=0 "$(CURDIR)/node_modules/.bin/openspec" validate --all --strict); \
 	done
 
 .PHONY: dev

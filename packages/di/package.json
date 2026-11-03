@@ -21,7 +21,8 @@
   "files": ["dist", "src"],
   "scripts": {
     "build": "tsup src/index.ts src/errors.ts src/definitions.ts --format esm --dts",
-    "test": "node --import tsx --test tests/di.test.ts"
+    "test": "node --import tsx --test tests/di.test.ts",
+    "spec:validate": "OPENSPEC_TELEMETRY=0 pnpm exec openspec validate --all --strict"
   },
   "devDependencies": {
     "@types/node": "^26.0.0",

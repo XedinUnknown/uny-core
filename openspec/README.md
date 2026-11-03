@@ -1,18 +1,23 @@
 # OpenSpec
 
 This root directory provides the tool-skill generation target that populates
-`.agents/skills/openspec-*/`. It contains no specs of its own.
+`.agents/skills/openspec-*/` and holds the spec for the repository-root entrypoint.
 
 ## Specs
 
-Capability specs live alongside their packages:
+This directory:
+
+- [Root entrypoint](specs/root-entrypoint/spec.md): `bin/uny.ts` — module selection,
+  bootstrap, and placeholder completion behavior.
+
+Capability specs for packages live alongside their packages:
 
 - [`packages/di/openspec/`](../packages/di/openspec/README.md): `@uny/di` — composition,
   containers, bootstrap, and errors.
 - [`packages/core/openspec/`](../packages/core/openspec/README.md): `@uny/core` — app
   configuration and derived paths.
 - [`packages/cli/openspec/`](../packages/cli/openspec/README.md): `@uny/cli` — flags,
-  config loading, inspection, and the root executable skeleton.
+  config loading, and inspection.
 
 ## Baseline
 
