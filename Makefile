@@ -7,16 +7,16 @@
 dependencies: .env
 	pnpm install --frozen-lockfile
 
-.PHONY: agents
-agents: dependencies
-	pnpm exec agents-config install
-
 .PHONY: openspec
 openspec: dependencies
 	pnpm exec openspec update --tools agents
 
+.PHONY: agents
+agents: openspec
+	pnpm exec agents-config install
+
 .PHONY: setup
-setup: agents openspec
+setup: agents
 	pnpm --version
 
 .PHONY: build
