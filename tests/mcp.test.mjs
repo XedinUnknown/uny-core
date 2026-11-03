@@ -3,13 +3,15 @@
  *
  * Run: node --test tests/mcp.test.mjs
  *
- * All I/O uses isolated tmp directories; no spawned processes.
+ * Unit tests use isolated tmp directories; no spawned processes.
+ * CLI tests spawn the script as a subprocess (Finding 3).
  */
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile, readFile, symlink, unlink, lstat } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -983,4 +985,264 @@ describe("variable interpolation", () => {
     });
     assert.equal(r.headers.Authorization, "Bearer ${TOKEN}");
   });
+});
+
+// ---------------------------------------------------------------------------
+// Finding 1 — loadManifest: deeper snapshot ownership validation
+// ---------------------------------------------------------------------------
+
+describe("manifest snapshot ownership validation", () => {
+  it("throws when managed is non-empty but snapshots key is absent", () => withRoot(async (root) => {
+    await wCanonical(root);
+    // Write manifest with managed entry but no snapshots key at all
+    await writeFile(join(root, ".mcp.manifest.json"),
+      JSON.stringify({ managed: ["serena"] }));
+    await assert.rejects(
+      sync.generate(root, { dryRun: false, adopt: false }),
+      /snapshots/i
+    );
+    // Destinations must not have been created
+    assert.ok(!existsSync(join(root, "opencode.json")));
+    assert.ok(!existsSync(join(root, ".mcp.json")));
+  }));
+
+  it("throws when managed entry is missing its oc: snapshot", () => withRoot(async (root) => {
+    await wCanonical(root);
+    // Only provide cl: snapshot, not oc:
+    const clSnap = sync.translateForClaude("serena", SRV_SERENA);
+    await writeFile(join(root, ".mcp.manifest.json"),
+      JSON.stringify({ managed: ["serena"], snapshots: { "cl:serena": clSnap } }));
+    await assert.rejects(
+      sync.generate(root, { dryRun: false, adopt: false }),
+      /oc:serena|missing snapshot/i
+    );
+    assert.ok(!existsSync(join(root, "opencode.json")));
+    assert.ok(!existsSync(join(root, ".mcp.json")));
+  }));
+
+  it("throws when managed entry is missing its cl: snapshot", () => withRoot(async (root) => {
+    await wCanonical(root);
+    const ocSnap = sync.translateForOpenCode("serena", SRV_SERENA);
+    await writeFile(join(root, ".mcp.manifest.json"),
+      JSON.stringify({ managed: ["serena"], snapshots: { "oc:serena": ocSnap } }));
+    await assert.rejects(
+      sync.generate(root, { dryRun: false, adopt: false }),
+      /cl:serena|missing snapshot/i
+    );
+    assert.ok(!existsSync(join(root, "opencode.json")));
+    assert.ok(!existsSync(join(root, ".mcp.json")));
+  }));
+
+  it("throws when a snapshot value is null (not a plain object)", () => withRoot(async (root) => {
+    await wCanonical(root);
+    const clSnap = sync.translateForClaude("serena", SRV_SERENA);
+    await writeFile(join(root, ".mcp.manifest.json"), JSON.stringify({
+      managed: ["serena"],
+      snapshots: { "oc:serena": null, "cl:serena": clSnap },
+    }));
+    await assert.rejects(
+      sync.generate(root, { dryRun: false, adopt: false }),
+      /plain object/i
+    );
+    assert.ok(!existsSync(join(root, "opencode.json")));
+    assert.ok(!existsSync(join(root, ".mcp.json")));
+  }));
+
+  it("throws when a snapshot value is an array (not a plain object)", () => withRoot(async (root) => {
+    await wCanonical(root);
+    const ocSnap = sync.translateForOpenCode("serena", SRV_SERENA);
+    const clSnap = sync.translateForClaude("serena", SRV_SERENA);
+    await writeFile(join(root, ".mcp.manifest.json"), JSON.stringify({
+      managed: ["serena"],
+      snapshots: { "oc:serena": ocSnap, "cl:serena": [] },
+    }));
+    await assert.rejects(
+      sync.generate(root, { dryRun: false, adopt: false }),
+      /plain object/i
+    );
+    assert.ok(!existsSync(join(root, "opencode.json")));
+    assert.ok(!existsSync(join(root, ".mcp.json")));
+  }));
+
+  it("empty managed with absent snapshots key is allowed (fresh manifest)", () => withRoot(async (root) => {
+    await wCanonical(root, {});
+    // managed:[] with no snapshots is valid — treat as fresh state
+    await writeFile(join(root, ".mcp.manifest.json"),
+      JSON.stringify({ managed: [] }));
+    // Should not throw
+    await sync.generate(root, { dryRun: false, adopt: false });
+  }));
+});
+
+// ---------------------------------------------------------------------------
+// Finding 2 — check: manifest-to-canonical comparison
+// ---------------------------------------------------------------------------
+
+describe("check manifest-to-canonical comparison", () => {
+  it("missing manifest is drift even when destination files match canonical", () => withRoot(async (root) => {
+    await wCanonical(root, { serena: SRV_SERENA });
+    // Write destinations correctly without going through generate (no manifest)
+    const ocEntry = sync.translateForOpenCode("serena", SRV_SERENA);
+    const clEntry = sync.translateForClaude("serena", SRV_SERENA);
+    await wOC(root, { mcp: { serena: ocEntry } });
+    await wCL(root, { mcpServers: { serena: clEntry } });
+    const r = await sync.check(root);
+    assert.equal(r.ok, false);
+    assert.ok(r.drifted.some((d) => /manifest.*missing|missing.*manifest/i.test(d)),
+      `expected missing-manifest drift, got: ${JSON.stringify(r.drifted)}`);
+  }));
+
+  it("stale empty manifest is drift when canonical has servers", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await sync.generate(root, { dryRun: false, adopt: false });
+    // Reset manifest to empty (simulating a hand-edit that cleared it)
+    await writeFile(join(root, ".mcp.manifest.json"),
+      JSON.stringify({ managed: [], snapshots: {} }));
+    const r = await sync.check(root);
+    assert.equal(r.ok, false);
+    // Should report that canonical servers are not tracked in manifest
+    assert.ok(r.drifted.some((d) => /manifest/i.test(d) && (/serena|jetbrains/.test(d))),
+      `expected canonical servers reported in manifest drift, got: ${JSON.stringify(r.drifted)}`);
+  }));
+
+  it("manifest with extra tracked entry that canonical dropped is drift", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await sync.generate(root, { dryRun: false, adopt: false });
+    // Now shrink canonical but leave manifest untouched (simulate: generate not re-run)
+    await wCanonical(root, { serena: SRV_SERENA });
+    const r = await sync.check(root);
+    assert.equal(r.ok, false);
+    assert.ok(r.drifted.some((d) => /jetbrains/i.test(d)),
+      `expected jetbrains drift, got: ${JSON.stringify(r.drifted)}`);
+  }));
+
+  it("manifest snapshot mismatch with canonical is drift (not a conflict error)", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await sync.generate(root, { dryRun: false, adopt: false });
+    // Silently update canonical without regenerating — snapshots in manifest are now stale
+    const newSrv = { type: "sse", url: "http://new-jetbrains/sse" };
+    await wCanonical(root, { serena: SRV_SERENA, jetbrains: newSrv });
+    const r = await sync.check(root);
+    // Must return drift, not throw
+    assert.equal(r.ok, false);
+    assert.ok(r.drifted.some((d) => /jetbrains/.test(d)),
+      `expected jetbrains snapshot drift, got: ${JSON.stringify(r.drifted)}`);
+  }));
+
+  it("ok after correct generate — manifest matches canonical exactly", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await sync.generate(root, { dryRun: false, adopt: false });
+    const r = await sync.check(root);
+    assert.equal(r.ok, true);
+    assert.deepEqual(r.drifted, []);
+  }));
+});
+
+// ---------------------------------------------------------------------------
+// Finding 3 — CLI: strict argument parser
+// ---------------------------------------------------------------------------
+
+// Helper: spawn the script and collect exit code + output
+function runCli(args) {
+  return new Promise((resolve) => {
+    const p = spawn(process.execPath, [SCRIPT, ...args], { stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "", stderr = "";
+    p.stdout.on("data", (d) => { stdout += d; });
+    p.stderr.on("data", (d) => { stderr += d; });
+    p.on("close", (code) => resolve({ code, stdout, stderr }));
+  });
+}
+
+describe("CLI strict argument parser", () => {
+  it("unknown flag exits nonzero before any I/O", () => withRoot(async (root) => {
+    await wCanonical(root);
+    const r = await runCli(["--unknown-flag", "--root", root]);
+    assert.notEqual(r.code, 0, "exit code must be nonzero");
+    assert.ok(/unknown/i.test(r.stderr), `stderr should mention unknown: ${r.stderr}`);
+    assert.ok(!existsSync(join(root, "opencode.json")), "opencode.json must not be created");
+    assert.ok(!existsSync(join(root, ".mcp.json")), ".mcp.json must not be created");
+    assert.ok(!existsSync(join(root, ".mcp.manifest.json")), "manifest must not be created");
+  }));
+
+  it("--check=true (equals-form) is rejected as unknown", () => withRoot(async (root) => {
+    await wCanonical(root);
+    const r = await runCli(["--check=true", "--root", root]);
+    assert.notEqual(r.code, 0);
+    assert.ok(/unknown/i.test(r.stderr), `stderr should mention unknown: ${r.stderr}`);
+  }));
+
+  it("--root without a following value exits nonzero", () => withRoot(async (root) => {
+    const r = await runCli(["--root"]);
+    assert.notEqual(r.code, 0);
+    assert.ok(/root/i.test(r.stderr), `stderr should mention root: ${r.stderr}`);
+  }));
+
+  it("--root followed by another flag is rejected", () => withRoot(async (root) => {
+    const r = await runCli(["--root", "--check"]);
+    assert.notEqual(r.code, 0);
+    assert.ok(/root/i.test(r.stderr), `stderr should mention root: ${r.stderr}`);
+  }));
+
+  it("--check and --adopt together exit nonzero", () => withRoot(async (root) => {
+    await wCanonical(root);
+    const r = await runCli(["--check", "--adopt", "--root", root]);
+    assert.notEqual(r.code, 0);
+    assert.ok(/mutually exclusive|check.*adopt|adopt.*check/i.test(r.stderr),
+      `stderr should mention conflict: ${r.stderr}`);
+  }));
+
+  it("--check and --dry-run together exit nonzero", () => withRoot(async (root) => {
+    await wCanonical(root);
+    const r = await runCli(["--check", "--dry-run", "--root", root]);
+    assert.notEqual(r.code, 0);
+    assert.ok(/mutually exclusive|check.*dry|dry.*check/i.test(r.stderr),
+      `stderr should mention conflict: ${r.stderr}`);
+  }));
+
+  it("positional argument is rejected as unknown", () => withRoot(async (root) => {
+    const r = await runCli(["foo", "--root", root]);
+    assert.notEqual(r.code, 0);
+    assert.ok(/unexpected|unknown/i.test(r.stderr), `stderr: ${r.stderr}`);
+  }));
+
+  it("valid generate (no servers) exits zero and writes files", () => withRoot(async (root) => {
+    await wCanonical(root, {});
+    const r = await runCli(["--root", root]);
+    assert.equal(r.code, 0, `expected exit 0, got ${r.code}; stderr: ${r.stderr}`);
+    assert.ok(existsSync(join(root, "opencode.json")));
+    assert.ok(existsSync(join(root, ".mcp.json")));
+    assert.ok(existsSync(join(root, ".mcp.manifest.json")));
+  }));
+
+  it("valid --check after generate exits zero", () => withRoot(async (root) => {
+    await wCanonical(root, {});
+    await runCli(["--root", root]);
+    const r = await runCli(["--check", "--root", root]);
+    assert.equal(r.code, 0, `expected exit 0, got ${r.code}; stderr: ${r.stderr}`);
+    assert.ok(/up to date/i.test(r.stdout), `stdout: ${r.stdout}`);
+  }));
+
+  it("--check exits nonzero on drift and does not modify files", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await runCli(["--root", root]);
+    const mfBefore = await readFile(join(root, ".mcp.manifest.json"), "utf8");
+    // Tamper a destination
+    const oc = JSON.parse(await readFile(join(root, "opencode.json"), "utf8"));
+    oc.mcp.serena.command[0] = "tampered-by-test";
+    await writeFile(join(root, "opencode.json"), JSON.stringify(oc, null, 2));
+    const r = await runCli(["--check", "--root", root]);
+    assert.notEqual(r.code, 0, "exit code must be nonzero on drift");
+    assert.ok(/DRIFT/i.test(r.stderr), `stderr should mention DRIFT: ${r.stderr}`);
+    // manifest must be unchanged
+    assert.equal(await readFile(join(root, ".mcp.manifest.json"), "utf8"), mfBefore);
+  }));
+
+  it("bad args do not modify pre-existing files", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await wOC(root, { permission: { edit: "allow" } });
+    const ocBefore = await readFile(join(root, "opencode.json"), "utf8");
+    await runCli(["--unknown-flag", "--root", root]);
+    const ocAfter = await readFile(join(root, "opencode.json"), "utf8");
+    assert.equal(ocBefore, ocAfter, "opencode.json must be unchanged after bad args");
+  }));
 });

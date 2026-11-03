@@ -16,7 +16,8 @@
  */
 
 import { readFile, writeFile, lstat } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import process from "node:process";
 
 const CANONICAL_FILE = "mcp.servers.json";
@@ -35,7 +36,9 @@ const VALID_SERVER_NAME = /^[A-Za-z_][A-Za-z0-9_-]*$/;
 // Valid ${VAR} variable name: must be a valid shell identifier (letter/underscore start).
 const VALID_VAR_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
+// ---------------------------------------------------------------------------
 // Validation helpers
+// ---------------------------------------------------------------------------
 
 function assertStr(val, label) {
   if (typeof val !== "string") throw new Error(`${label} must be a string`);
@@ -82,7 +85,9 @@ function validateServerEntry(name, entry) {
   }
 }
 
+// ---------------------------------------------------------------------------
 // loadCanonical
+// ---------------------------------------------------------------------------
 
 export async function loadCanonical(root) {
   const path = join(root, CANONICAL_FILE);
@@ -106,7 +111,9 @@ export async function loadCanonical(root) {
   return parsed;
 }
 
+// ---------------------------------------------------------------------------
 // Translation
+// ---------------------------------------------------------------------------
 
 const toOC = (s) => s.replace(/\$\{([^}]+)\}/g, (_, v) => `{env:${v}}`);
 const mapStr = (obj, fn) => Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, fn(v)]));
@@ -136,7 +143,9 @@ export function translateForClaude(_name, server) {
   return result;
 }
 
+// ---------------------------------------------------------------------------
 // I/O helpers
+// ---------------------------------------------------------------------------
 
 async function readJSON(path) {
   let raw;
@@ -162,7 +171,9 @@ function assertTargetShape(obj, file, mcp_key) {
   if (obj[mcp_key] !== undefined) assertPlain(obj[mcp_key], `${file} "${mcp_key}"`);
 }
 
+// ---------------------------------------------------------------------------
 // Manifest
+// ---------------------------------------------------------------------------
 
 async function assertManifestNotSymlink(root) {
   const path = join(root, MANIFEST_FILE);
@@ -172,6 +183,15 @@ async function assertManifestNotSymlink(root) {
   } catch (err) { if (err.code !== "ENOENT") throw err; }
 }
 
+/**
+ * Load and validate the manifest.
+ *
+ * Finding 1 — stricter manifest validation:
+ * - If managed is non-empty and the "snapshots" key is absent → error.
+ *   (An empty snapshots:{} is explicitly allowed when managed is empty.)
+ * - Each managed name must have both "oc:<name>" and "cl:<name>" snapshot keys,
+ *   and each snapshot value must be a plain non-null object.
+ */
 async function loadManifest(root) {
   // Guard before reading — symlink check applies in all code paths
   await assertManifestNotSymlink(root);
@@ -181,13 +201,32 @@ async function loadManifest(root) {
   let data;
   try { data = JSON.parse(raw); }
   catch (err) { throw new Error(`${MANIFEST_FILE}: invalid JSON: ${err.message}`); }
+
   if (!Array.isArray(data?.managed))
     throw new Error(`${MANIFEST_FILE}: "managed" must be an array`);
   for (const item of data.managed)
     if (typeof item !== "string")
       throw new Error(`${MANIFEST_FILE}: "managed" entries must be strings`);
-  if (data.snapshots !== undefined) assertPlain(data.snapshots, `${MANIFEST_FILE} "snapshots"`);
-  return { managed: data.managed, snapshots: data.snapshots ?? {} };
+
+  // If managed is non-empty, snapshots must be present and a plain object
+  if (data.managed.length > 0 && !Object.prototype.hasOwnProperty.call(data, "snapshots"))
+    throw new Error(`${MANIFEST_FILE}: "snapshots" must be present when "managed" is non-empty`);
+  if (data.snapshots !== undefined)
+    assertPlain(data.snapshots, `${MANIFEST_FILE} "snapshots"`);
+
+  const snapshots = data.snapshots ?? {};
+
+  // Each managed name must have both oc: and cl: snapshots as plain non-null objects
+  for (const name of data.managed) {
+    for (const prefix of ["oc", "cl"]) {
+      const key = `${prefix}:${name}`;
+      if (!Object.prototype.hasOwnProperty.call(snapshots, key))
+        throw new Error(`${MANIFEST_FILE}: missing snapshot "${key}" for managed entry "${name}"`);
+      assertPlain(snapshots[key], `${MANIFEST_FILE} snapshots["${key}"]`);
+    }
+  }
+
+  return { managed: data.managed, snapshots };
 }
 
 async function writeManifest(root, managed, snapshots) {
@@ -200,9 +239,11 @@ async function writeManifest(root, managed, snapshots) {
   if (content !== cur) await writeFile(path, content);
 }
 
+// ---------------------------------------------------------------------------
 // Conflict detection (snapshot-based)
-// Checks entries in `projected` as well as entries in `prevManaged` that are absent
-// from `newServers` (i.e. being removed).
+// Checks entries in `projected` as well as entries in `prevManaged` that are
+// absent from `newServers` (i.e. being removed from canonical).
+// ---------------------------------------------------------------------------
 
 function detectConflicts(current, projected, prevManaged, newServers, snapshots, adopt, label) {
   if (adopt) return [];
@@ -235,7 +276,9 @@ function detectConflicts(current, projected, prevManaged, newServers, snapshots,
   return conflicts;
 }
 
+// ---------------------------------------------------------------------------
 // generate
+// ---------------------------------------------------------------------------
 
 export async function generate(root, opts = {}) {
   const dryRun = opts.dryRun ?? false;
@@ -306,74 +349,199 @@ export async function generate(root, opts = {}) {
   return { opencode: newOc, claude: newCl };
 }
 
+// ---------------------------------------------------------------------------
 // check
+//
+// Finding 2 — check compares manifest against canonical directly:
+// - Missing manifest (no file) → drift even if destination files look correct.
+// - Manifest's managed list (sorted) must match canonical's server keys (sorted).
+//   Any discrepancy is drift.
+// - Each managed entry's snapshots must match the freshly computed projection.
+//   This detects when canonical changed between syncs without running generate.
+// ---------------------------------------------------------------------------
 
 export async function check(root) {
   // Manifest symlink guard must propagate as a hard error (not swallowed into drifted)
   await assertManifestNotSymlink(root);
 
-  let expected;
-  try { expected = await generate(root, { dryRun: true, adopt: false }); }
-  catch (err) { return { ok: false, drifted: [`Cannot compute expected state: ${err.message}`] }; }
-
-  // Load manifest to know which names were managed (needed to detect stale removed entries)
-  let prevManaged = [];
+  // Load canonical first; failures surface as drifted (canonical missing/invalid is an error)
+  let servers;
   try {
-    const mf = await loadManifest(root);
-    prevManaged = mf.managed;
-  } catch { /**/ }
+    ({ servers } = await loadCanonical(root));
+  } catch (err) {
+    return { ok: false, drifted: [`Cannot load canonical: ${err.message}`] };
+  }
+
+  // Load manifest — missing manifest is always drift (Finding 2)
+  let manifest;
+  const manifestPath = join(root, MANIFEST_FILE);
+  let manifestMissing = false;
+  try {
+    const raw = await readFile(manifestPath, "utf8");
+    let data;
+    try { data = JSON.parse(raw); }
+    catch (err) { return { ok: false, drifted: [`${MANIFEST_FILE}: invalid JSON: ${err.message}`] }; }
+    // Basic schema checks (non-throwing for check context — still drift if malformed)
+    if (!Array.isArray(data?.managed))
+      return { ok: false, drifted: [`${MANIFEST_FILE}: "managed" must be an array`] };
+    if (data.snapshots !== undefined && (data.snapshots === null || typeof data.snapshots !== "object" || Array.isArray(data.snapshots)))
+      return { ok: false, drifted: [`${MANIFEST_FILE}: "snapshots" must be a plain object`] };
+    manifest = { managed: data.managed, snapshots: data.snapshots ?? {} };
+  } catch (err) {
+    if (err.code !== "ENOENT") throw err;
+    manifestMissing = true;
+    manifest = null;
+  }
 
   const drifted = [];
-  for (const [file, path, mcp_key, expObj] of [
-    [OPENCODE_FILE, join(root, OPENCODE_FILE), "mcp",        expected.opencode],
-    [CLAUDE_FILE,   join(root, CLAUDE_FILE),   "mcpServers", expected.claude],
+
+  // Missing manifest is always drift (Finding 2)
+  if (manifestMissing) {
+    drifted.push(`${MANIFEST_FILE} is missing`);
+    // Still check destination files for completeness
+    // (use canonical keys as expected)
+  }
+
+  // Compute expected projections from canonical
+  const ocProjected = {};
+  const clProjected = {};
+  for (const [n, s] of Object.entries(servers)) {
+    ocProjected[n] = translateForOpenCode(n, s);
+    clProjected[n] = translateForClaude(n, s);
+  }
+
+  const canonicalKeys = Object.keys(servers).sort();
+
+  if (manifest !== null) {
+    // Finding 2: manifest managed list must match canonical keys (sorted)
+    const manifestManaged = [...manifest.managed].sort();
+    if (JSON.stringify(manifestManaged) !== JSON.stringify(canonicalKeys)) {
+      // Report any keys in canonical not tracked in manifest, and vice versa
+      const manifestSet = new Set(manifest.managed);
+      const canonicalSet = new Set(Object.keys(servers));
+      for (const n of canonicalKeys)
+        if (!manifestSet.has(n))
+          drifted.push(`${MANIFEST_FILE}: "${n}" is in canonical but not tracked in manifest`);
+      for (const n of manifest.managed)
+        if (!canonicalSet.has(n))
+          drifted.push(`${MANIFEST_FILE}: "${n}" is tracked in manifest but absent from canonical`);
+    }
+
+    // Finding 2: each manifest snapshot must match the current canonical projection
+    for (const n of manifest.managed) {
+      for (const [prefix, projected] of [["oc", ocProjected], ["cl", clProjected]]) {
+        const key = `${prefix}:${n}`;
+        const snap = manifest.snapshots[key];
+        if (snap === undefined) {
+          drifted.push(`${MANIFEST_FILE}: missing snapshot "${key}"`);
+        } else if (n in projected && JSON.stringify(snap) !== JSON.stringify(projected[n])) {
+          drifted.push(`${MANIFEST_FILE}: snapshot "${key}" does not match current canonical projection`);
+        }
+      }
+    }
+  }
+
+  // Check destination files against expected projections
+  for (const [file, path, mcp_key, projected] of [
+    [OPENCODE_FILE, join(root, OPENCODE_FILE), "mcp",        ocProjected],
+    [CLAUDE_FILE,   join(root, CLAUDE_FILE),   "mcpServers", clProjected],
   ]) {
-    const actual = await readJSON(path);
-    if (!actual) { drifted.push(`${file} is missing`); continue; }
-    const exp = expObj[mcp_key] ?? {};
+    const actual = await readJSON(path).catch(() => null);
+    if (actual === null) { drifted.push(`${file} is missing`); continue; }
     const act = actual[mcp_key] ?? {};
     // Check managed entries that should be present
-    for (const n of Object.keys(exp))
-      if (JSON.stringify(act[n]) !== JSON.stringify(exp[n]))
+    for (const n of Object.keys(projected))
+      if (JSON.stringify(act[n]) !== JSON.stringify(projected[n]))
         drifted.push(`${file}: "${n}" has drifted`);
     // Check previously-managed entries that should now be absent (removed from canonical)
-    for (const n of prevManaged)
-      if (!(n in exp) && n in act)
+    const managedInManifest = manifest?.managed ?? [];
+    for (const n of managedInManifest)
+      if (!(n in projected) && n in act)
         drifted.push(`${file}: "${n}" is stale (removed from canonical but still present in projection)`);
   }
+
   return { ok: drifted.length === 0, drifted };
 }
 
-// CLI
+// ---------------------------------------------------------------------------
+// CLI — strict argument parser (Finding 3)
+//
+// Whitelisted flags: --check, --dry-run, --adopt, --root <VALUE>
+// Unknown flags, missing --root value, conflicting flag combinations
+// (--check + --adopt, --check + --dry-run) all exit nonzero before any I/O.
+//
+// Entry detection: pathToFileURL(resolve(process.argv[1])) exact match.
+// ---------------------------------------------------------------------------
 
-let argvUrl = "";
-try {
-  if (process.argv[1])
-    argvUrl = new URL(process.argv[1].startsWith("/") ? `file://${process.argv[1]}` : process.argv[1]).href;
-} catch { /**/ }
+function parseArgs(argv) {
+  const KNOWN_FLAGS = new Set(["--check", "--dry-run", "--adopt", "--root"]);
+  const result = { check: false, dryRun: false, adopt: false, root: null, errors: [] };
+  let i = 0;
+  while (i < argv.length) {
+    const arg = argv[i];
+    if (arg === "--check")    { result.check   = true; i++; continue; }
+    if (arg === "--dry-run")  { result.dryRun  = true; i++; continue; }
+    if (arg === "--adopt")    { result.adopt   = true; i++; continue; }
+    if (arg === "--root") {
+      const val = argv[i + 1];
+      if (val === undefined || val.startsWith("--")) {
+        result.errors.push(`--root requires a directory argument`);
+        i++;
+        continue;
+      }
+      result.root = val;
+      i += 2;
+      continue;
+    }
+    // Reject anything that looks like a flag but isn't whitelisted
+    if (arg.startsWith("--") || (arg.startsWith("-") && arg.length > 1)) {
+      result.errors.push(`unknown option: ${arg}`);
+      i++;
+      continue;
+    }
+    // Bare positional arguments are also unknown
+    result.errors.push(`unexpected argument: ${arg}`);
+    i++;
+  }
 
-if (import.meta.url === argvUrl || process.argv[1]?.endsWith("sync-mcp.mjs")) {
-  const args   = process.argv.slice(2);
-  const doCheck = args.includes("--check");
-  const dryRun  = args.includes("--dry-run");
-  const adopt   = args.includes("--adopt");
-  const ri      = args.indexOf("--root");
-  const root    = ri !== -1 && args[ri + 1] ? args[ri + 1] : process.cwd();
+  // Conflict: --check is read-only; --adopt and --dry-run are generate-only
+  if (result.check && result.adopt)
+    result.errors.push(`--check and --adopt are mutually exclusive`);
+  if (result.check && result.dryRun)
+    result.errors.push(`--check and --dry-run are mutually exclusive`);
 
-  const run = doCheck
+  return result;
+}
+
+const isEntryPoint =
+  process.argv[1] != null &&
+  import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+
+if (isEntryPoint) {
+  const parsed = parseArgs(process.argv.slice(2));
+
+  if (parsed.errors.length > 0) {
+    for (const e of parsed.errors) console.error(`Error: ${e}`);
+    console.error(`Usage: sync-mcp.mjs [--check] [--root <dir>] [--adopt] [--dry-run]`);
+    process.exit(1);
+  }
+
+  const root = parsed.root ?? process.cwd();
+
+  const run = parsed.check
     ? check(root).then(({ ok, drifted }) => {
         if (ok) { console.log("ok — projections are up to date"); return; }
         console.error("DRIFT detected:");
         for (const d of drifted) console.error(`  - ${d}`);
         process.exitCode = 1;
       })
-    : generate(root, { dryRun, adopt }).then((result) => {
-        if (dryRun && result) {
+    : generate(root, { dryRun: parsed.dryRun, adopt: parsed.adopt }).then((result) => {
+        if (parsed.dryRun && result) {
           console.log("Dry-run — would write:\n\nopencode.json:");
           console.log(JSON.stringify(result.opencode, null, 2));
           console.log("\n.mcp.json:");
           console.log(JSON.stringify(result.claude, null, 2));
-        } else if (!dryRun) {
+        } else if (!parsed.dryRun) {
           console.log(`Generated: ${OPENCODE_FILE}  ${CLAUDE_FILE}  ${MANIFEST_FILE}`);
         }
       });
