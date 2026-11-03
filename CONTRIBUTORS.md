@@ -20,6 +20,8 @@ docker compose build dev
 docker compose run --rm dev make setup
 ```
 
+`make setup` installs dependencies, agent skills, and generates MCP projection files (`opencode.json` and `.mcp.json`). It does not check host prerequisites — run `make check-host` from the host separately if needed.
+
 See the [Makefile](Makefile) for development targets. Run them inside the container,
 or directly where Make, Node.js, and pnpm are available. Restart OpenCode after
 setup installs or refreshes agent integrations.
@@ -36,6 +38,16 @@ docker compose logs -f dev
 docker compose down
 ```
 
+## Host Prerequisites
+
+Some AI tooling (Serena MCP) runs on the host, outside Docker. Verify host prerequisites before working with AI tooling:
+
+```bash
+make check-host
+```
+
+This checks that `uvx` (from [uv](https://docs.astral.sh/uv/)) is present and executable at `$HOME/.local/bin/uvx`. It does not invoke any server or install any software. JetBrains MCP availability is optional and not checked. Run this from the host, not inside the Docker container.
+
 ## Build and Test
 
 ```bash
@@ -45,7 +57,10 @@ pnpm build
 # Build only changed packages
 pnpm build:changed
 
-# Run all tests (builds first via Nx dependency)
+# Run tooling tests (agent definitions, MCP projection)
+pnpm test:tooling
+
+# Run all package tests (builds first via Nx dependency)
 pnpm test
 
 # Run tests for a specific package
@@ -53,7 +68,7 @@ cd packages/di && pnpm test
 cd packages/core && pnpm test
 ```
 
-Tests use `node:test` with tsx loader and run against compiled `dist/` output. The build step is automatically triggered by Nx before tests.
+Tooling tests (`tests/*.test.*`) use `node --test` with no build step and run directly against source files. Package tests use `node:test` with tsx loader and run against compiled `dist/` output; the build step is automatically triggered by Nx before tests.
 
 ## Serena MCP Server
 

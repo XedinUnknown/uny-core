@@ -9,7 +9,7 @@
     "build": "lerna run build --stream",
     "build:changed": "lerna run build --since --stream",
     "test": "lerna run test --stream",
-    "test:tooling": "node --test tests/mcp.test.mjs",
+    "test:tooling": "node --test tests/*.test.*",
     "test:ui": "lerna run test -- --ui",
     "release": "lerna run build --since --stream && lerna publish from-package --yes",
     "version": "lerna version"
