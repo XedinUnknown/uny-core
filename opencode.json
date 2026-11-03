@@ -63,5 +63,12 @@
       "rm -rf*": "ask",
       "docker system prune*": "ask"
     }
+  },
+  "agent": {
+    "plan": {
+      "permission": {
+        "edit": "deny"
+      }
+    }
   }
 }
