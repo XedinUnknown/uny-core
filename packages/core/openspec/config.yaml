@@ -1,0 +1,11 @@
+schema: spec-driven
+
+context: |
+  The `@uny/core` specs describe the foundational application configuration and path keys
+  as living capability requirements derived from the committed implementation.
+  Preserve the implementation-first baseline distinction: plans, memories, and design
+  documents are not requirement sources. Propose future behaviour explicitly as changes rather
+  than silently expanding the baseline.
+
+  Historical evidence links, coverage notes, and quirks are in
+  docs/openspec-baseline-review.md at the repository root.
