@@ -11,7 +11,8 @@
     "test": "lerna run test --stream",
     "test:ui": "lerna run test -- --ui",
     "release": "lerna run build --since --stream && lerna publish from-package --yes",
-    "version": "lerna version"
+    "version": "lerna version",
+    "validate-specs": "make validate-specs"
   },
   "devDependencies": {
     "@fission-ai/openspec": "1.16.0",

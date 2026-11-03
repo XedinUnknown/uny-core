@@ -1,6 +1,7 @@
 # OpenSpec
 
-This directory contains the capability specs and validation configuration for the `uny` project.
+This root directory provides the tool-skill generation target that populates
+`.agents/skills/openspec-*/` and holds the spec for the repository-root entrypoint.
 
 ## Design
 
@@ -10,20 +11,28 @@ expand the OpenSpec baseline. No planned or future runtime behavior is claimed a
 
 ## Specs
 
-- [DI composition](specs/di-composition/spec.md): providers, definition helpers, and provenance.
-- [DI containers](specs/di-containers/spec.md): resolution, decorators, bootstrap, caching, and
-  errors.
-- [Core configuration](specs/core-config/spec.md): app keys and derived paths.
-- [CLI](specs/cli/spec.md): flags, config loading, inspection, and the distinct root executable
-  skeleton.
+This directory:
+
+- [Root entrypoint](specs/root-entrypoint/spec.md): `bin/uny.ts` — module selection,
+  bootstrap, and placeholder completion behavior.
+
+Capability specs for packages live alongside their packages:
+
+- [`packages/di/openspec/`](../packages/di/openspec/README.md): `@uny/di` — composition,
+  containers, bootstrap, and errors.
+- [`packages/core/openspec/`](../packages/core/openspec/README.md): `@uny/core` — app
+  configuration and derived paths.
+- [`packages/cli/openspec/`](../packages/cli/openspec/README.md): `@uny/cli` — flags,
+  config loading, and inspection.
 
 ## Baseline
 
-The initial specs describe behavior at
-[`5c0e1b5`](https://github.com/XedinUnknown/uny-core/tree/5c0e1b5). They record what exists as
-living capability requirements, not a snapshot of the implementation. Plans, memories, and design
-documents are not requirement sources. No instruction runner, persistent host, session lifecycle, or
-device adapter is specified.
+The initial specs describe the implementation at
+[`5c0e1b5`](https://github.com/XedinUnknown/uny-core/tree/5c0e1b5). Historical evidence
+links, test-coverage notes, and baseline process details are in
+[`docs/openspec-baseline-review.md`](../docs/openspec-baseline-review.md).
 
-Evidence links, test-coverage notes, historical quirks, and baseline process details are in
-[baseline-review.md](baseline-review.md).
+## Tool Skills
+
+Run `make openspec` (or `make setup`) to regenerate `.agents/skills/openspec-*/` after
+updating the `@fission-ai/openspec` dependency or changing tool configuration.

@@ -27,8 +27,8 @@ and the `AppConfig` interface with string fields `name`, `version`, and `rootDir
 
 The provider SHALL define `app/name`, `app/version`, and `app/rootDir` as functions reading the
 respective fields from the supplied config object at definition-invocation time. It SHALL NOT
-validate, normalize, clone, or supply defaults for these fields. Defaults chosen by a CLI caller SHALL
-NOT be attributed to the core provider.
+validate, normalize, clone, or supply defaults for these fields. Callers are responsible for supplying
+all field values.
 
 #### Scenario: Values are supplied by the caller
 

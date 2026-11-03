@@ -4,10 +4,11 @@
 
 Provide the runtime containers that resolve composed providers into service values. `DelegatingContainer`
 evaluates definitions and extension chains on demand. `CachingContainer` retains each result so
-repeated resolution returns the first value. `ProxyContainer` supports circular dependency wiring by
-holding a late-bound inner container. `CompositeContainer` tries multiple containers in priority order.
-`CircularDetector` guards against infinite resolution loops. `bootstrap` wires these pieces into a
-ready-to-use application container.
+repeated resolution returns the first value. `ProxyContainer` holds a late-bound inner container to
+close forward-reference delegation loops during bootstrap (for example, allowing provider definitions
+to receive the final application container before that container is fully constructed). `CompositeContainer`
+tries multiple containers in priority order. `CircularDetector` guards against infinite resolution
+loops. `bootstrap` wires these pieces into a ready-to-use application container.
 
 ## Requirements
 
@@ -28,10 +29,10 @@ an optional `keys(): string[]` method.
 ### Requirement: Uncached provider resolution
 
 `DelegatingContainer` SHALL resolve a provider definition, then apply its extension if present, and
-return the result without caching. An extension-only key SHALL start with `undefined`. With neither a
-truthy definition nor a truthy extension, it SHALL throw `MissingKeyError` listing the provider's own
-enumerable definition keys, excluding extension-only keys. It SHALL propagate errors from invoked
-definitions and extensions without wrapping them.
+return the result without caching. Lookup uses property access (`record[key]`), reaching inherited
+properties. An extension-only key starts with `undefined`. With neither a truthy definition nor
+a truthy extension, it SHALL throw `MissingKeyError` listing the provider's own enumerable definition
+keys. It SHALL propagate errors from definitions and extensions without wrapping them.
 
 #### Scenario: Repeat direct resolution
 
@@ -43,6 +44,14 @@ definitions and extensions without wrapping them.
 - **WHEN** neither a definition nor an extension is found for a requested key
 - **THEN** resolution throws `MissingKeyError` with that key and the own enumerable definition keys as
   its available list
+
+#### Scenario: Resolve an inherited definition
+
+- **GIVEN** the definition record's prototype defines a property `inherited` as a function returning
+  `"inherited-value"`
+- **WHEN** `resolve("inherited")` is called
+- **THEN** it returns `"inherited-value"` and does not throw, because property access traverses the
+  prototype chain
 
 ### Requirement: Lookup container selection
 
@@ -65,14 +74,22 @@ direct `resolve`, `has`, and `keys` on the child SHALL not fall back to or merge
 
 ### Requirement: Provider membership and enumeration
 
-`DelegatingContainer.has` SHALL report whether a key is present in the definition or extension
-records without invoking their functions. `keys()` SHALL return the sorted, deduplicated union of
-their own enumerable string keys, including extension-only keys.
+`DelegatingContainer.has` SHALL report whether a key is reachable in the definition or extension
+records without invoking their functions. The lookup uses JavaScript `in`, which matches inherited
+properties in addition to own enumerable properties. `keys()` SHALL return the sorted, deduplicated
+union of the own enumerable string keys of the definition and extension records, including
+extension-only own keys; inherited-property keys reported by `has` are not included.
 
 #### Scenario: Enumerate definitions and extensions
 
-- **WHEN** a provider defines `a` and `b` and extends `b` and `c`
+- **WHEN** a provider defines `a` and `b` and extends `b` and `c` as own enumerable keys
 - **THEN** `keys()` returns `["a", "b", "c"]` and `has("c")` returns `true`
+
+#### Scenario: has matches inherited properties
+
+- **GIVEN** the definition record's prototype defines a property `inherited`
+- **WHEN** `has("inherited")` is called
+- **THEN** it returns `true`, and `"inherited"` does not appear in `keys()`
 
 ### Requirement: Successful-result caching
 

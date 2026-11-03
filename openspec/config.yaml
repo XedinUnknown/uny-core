@@ -1,11 +1,26 @@
 schema: spec-driven
 
 context: |
-  The initial specs are a descriptive baseline of committed implementation,
-  not an import of planned requirements. Preserve that distinction: plans,
-  package design documents, and memories do not establish implemented behavior.
-  Propose future behavior explicitly as changes rather than silently expanding
-  the baseline. See openspec/README.md for baseline scope and provenance.
-  Intended architecture lives in openspec/design/architecture.md; delivery order,
-  acceptance criteria, and open decisions live in openspec/design/implementation-plan.md.
-  These supplementary design documents do not establish implemented behavior.
+  This root OpenSpec directory holds the spec for the repository-root entrypoint
+  (bin/uny.ts) and provides the tool-skill generation target that populates
+  .agents/skills/openspec-*/. Package-level capability specs live in their respective
+  package openspec directories:
+
+    packages/di/openspec/     — @uny/di composition and container specs
+    packages/core/openspec/   — @uny/core configuration specs
+    packages/cli/openspec/    — @uny/cli command-line interface specs
+
+  Preserve the implementation-first baseline distinction: plans, memories, and design
+  documents are not requirement sources. Propose future behaviour explicitly as changes
+  rather than silently expanding the baseline.
+
+  Historical evidence links, coverage notes, and quirks are in
+  docs/openspec-baseline-review.md at the repository root.
+
+  Use `openspec validate --all` from a package directory to validate its specs, or run
+  `make validate-specs` from the repository root to validate all roots.
+
+  Supplementary project planning documents live in openspec/design/: intended
+  architecture in openspec/design/architecture.md, and delivery order, acceptance
+  criteria, and open decisions in openspec/design/implementation-plan.md. These
+  documents do not establish implemented behavior and are not OpenSpec-validated artifacts.

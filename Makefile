@@ -14,14 +14,14 @@ dependencies: .env
 openspec: dependencies
 	pnpm exec openspec init --tools agents --no-copilot-cloud
 
-.PHONY: agents
-agents: dependencies
-	pnpm exec agents-config install
-
 # openspec runs before agents so OpenSpec-generated skills exist in .agents/skills/
 # before agents-config runs the claude-interop symlink step.
+.PHONY: agents
+agents: openspec
+	pnpm exec agents-config install
+
 .PHONY: setup
-setup: openspec agents
+setup: agents
 	pnpm --version
 
 .PHONY: build
@@ -32,6 +32,8 @@ build: dependencies
 test: dependencies
 	pnpm test
 
+# Validate every openspec root (repo root + packages/*) that contains openspec/config.yaml.
+# Discovers roots dynamically; excludes node_modules, .git, generated, and vendor trees.
 .PHONY: validate-specs
 validate-specs: dependencies
 	@set -e; \

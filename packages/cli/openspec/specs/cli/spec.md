@@ -175,8 +175,8 @@ validation occurs.
 ### Requirement: Supply command-line settings to application configuration
 
 The CLI SHALL contribute `io/verbosity` as the number of `-v` options minus the number of `-q`
-options, and `output/format` as the selected output format. It SHALL register these definitions under
-`cli-overrides` after project customization, including when neither option was supplied.
+options, and `output/format` as the selected output format. After project customization completes,
+it SHALL set the `cli-overrides` provider to these definitions, including when neither option was supplied.
 
 #### Scenario: Supply settings without explicit options
 
@@ -188,6 +188,18 @@ options, and `output/format` as the selected output format. It SHALL register th
 
 - **WHEN** the user runs `uny -v -v -q`
 - **THEN** `cli-overrides` contributes `io/verbosity` equal to 1
+
+### Requirement: Preserve an existing command-line provider position
+
+Registering `cli-overrides` SHALL append it when absent or replace an existing entry without moving it. If
+project configuration placed `cli-overrides` earlier in the map, providers registered after it may
+still override those settings.
+
+#### Scenario: cli-overrides inserted by project configuration retains its position
+
+- **GIVEN** the project configuration transform places `cli-overrides` before `extra` in the map
+- **WHEN** the CLI sets `cli-overrides` after project customization
+- **THEN** `cli-overrides` retains its earlier position and `extra` can still override its values
 
 ### Requirement: Show the providers contributing each key
 
