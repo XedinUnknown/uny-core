@@ -1,875 +1,736 @@
 /**
- * Tests for bin/sync-mcp.mjs — MCP projection generator.
+ * Tests for bin/sync-mcp.mjs
  *
  * Run: node --test tests/mcp.test.mjs
  *
- * All tests use in-process fixture roots (no real fs writes to project files,
- * no spawned processes). The sync-mcp module is imported with a custom root
- * path so every test remains fully isolated.
+ * All I/O uses isolated tmp directories; no spawned processes.
  */
 
-import { describe, it, before, beforeEach, after } from "node:test";
+import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile, readFile, mkdir } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, readFile, symlink, unlink } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-// ---------------------------------------------------------------------------
-// Helper: import the module under test with a given root so tests are isolated
-// ---------------------------------------------------------------------------
-
-/** Absolute path to the script under test. */
-const SCRIPT = resolve(
-  new URL("../bin/sync-mcp.mjs", import.meta.url).pathname
-);
-
-/**
- * Import the module's exported API.
- * Each call should get a fresh module; we side-step ESM caching by appending a
- * query param (Node ignores query params for actual resolution but busts cache).
- */
-let _importSeq = 0;
-async function importSync(root) {
-  const mod = await import(`${SCRIPT}?_=${++_importSeq}`);
-  return mod;
-}
+const SCRIPT = resolve(new URL("../bin/sync-mcp.mjs", import.meta.url).pathname);
+let _seq = 0;
+const imp = () => import(`${SCRIPT}?_=${++_seq}`);
+const sync = await imp();
 
 // ---------------------------------------------------------------------------
-// Fixture helpers
+// Fixtures
 // ---------------------------------------------------------------------------
 
-/** Canonical server entries matching mcp.servers.json */
-const CANONICAL_SERENA = {
+const SRV_SERENA = {
   type: "stdio",
   command: "${HOME}/.local/bin/uvx",
-  args: [
-    "-p",
-    "3.13",
-    "--from",
-    "git+https://github.com/oraios/serena",
-    "serena",
-    "start-mcp-server",
-    "--context=ide",
-    "--open-web-dashboard=false",
-    "--project-from-cwd",
-  ],
+  args: ["-p", "3.13", "--from", "git+https://github.com/oraios/serena",
+         "serena", "start-mcp-server", "--context=ide",
+         "--open-web-dashboard=false", "--project-from-cwd"],
   env: { BROWSER: "/bin/true" },
 };
 
-const CANONICAL_JETBRAINS = {
-  type: "sse",
-  url: "http://127.0.0.1:64342/sse",
-};
+const SRV_JETBRAINS = { type: "sse", url: "http://127.0.0.1:64342/sse" };
 
-const CANONICAL_SERVERS = {
-  serena: CANONICAL_SERENA,
-  jetbrains: CANONICAL_JETBRAINS,
-};
-
-function makeCanonical(servers = CANONICAL_SERVERS) {
-  return { servers };
+async function tmp() {
+  return mkdtemp(join(tmpdir(), "mcp-test-"));
 }
 
-async function writeCanonical(root, content = makeCanonical()) {
-  await writeFile(join(root, "mcp.servers.json"), JSON.stringify(content, null, 2));
+async function wCanonical(root, servers = { serena: SRV_SERENA, jetbrains: SRV_JETBRAINS }) {
+  await writeFile(join(root, "mcp.servers.json"), JSON.stringify({ servers }, null, 2));
 }
 
-async function writeOpenCode(root, content) {
+async function wOC(root, content) {
   await writeFile(join(root, "opencode.json"), JSON.stringify(content, null, 2));
 }
 
-async function writeClaudeMcp(root, content) {
+async function wCL(root, content) {
   await writeFile(join(root, ".mcp.json"), JSON.stringify(content, null, 2));
 }
 
-async function readJSON(path) {
+async function rJSON(path) {
   return JSON.parse(await readFile(path, "utf8"));
 }
 
-async function makeRoot() {
-  const root = await mkdtemp(join(tmpdir(), "mcp-test-"));
-  return root;
+async function withRoot(fn) {
+  const root = await tmp();
+  try { return await fn(root); }
+  finally { await rm(root, { recursive: true }); }
 }
 
 // ---------------------------------------------------------------------------
-// Import the module once to access exported helpers
-// The module MUST export: generate(), check(), loadCanonical(), translate*()
-// ---------------------------------------------------------------------------
-
-const sync = await importSync();
-
-// ---------------------------------------------------------------------------
-// 1. loadCanonical — reads and validates mcp.servers.json
+// loadCanonical — shape validation
 // ---------------------------------------------------------------------------
 
 describe("loadCanonical", () => {
-  it("loads a valid canonical file", async () => {
-    const root = await makeRoot();
-    try {
-      await writeCanonical(root);
-      const result = await sync.loadCanonical(root);
-      assert.ok(result.servers, "has servers");
-      assert.ok(result.servers.serena, "has serena");
-      assert.ok(result.servers.jetbrains, "has jetbrains");
-    } finally {
-      await rm(root, { recursive: true });
-    }
-  });
+  it("parses a valid canonical file", () => withRoot(async (root) => {
+    await wCanonical(root);
+    const c = await sync.loadCanonical(root);
+    assert.equal(c.servers.serena.type, "stdio");
+    assert.equal(c.servers.jetbrains.type, "sse");
+  }));
 
-  it("throws if mcp.servers.json is missing", async () => {
-    const root = await makeRoot();
-    try {
-      await assert.rejects(
-        () => sync.loadCanonical(root),
-        /mcp\.servers\.json/i
-      );
-    } finally {
-      await rm(root, { recursive: true });
-    }
-  });
+  it("throws ENOENT error mentioning filename", () => withRoot(async (root) => {
+    await assert.rejects(sync.loadCanonical(root), /mcp\.servers\.json/);
+  }));
 
-  it("throws if servers field is missing", async () => {
-    const root = await makeRoot();
-    try {
-      await writeFile(join(root, "mcp.servers.json"), JSON.stringify({}));
-      await assert.rejects(
-        () => sync.loadCanonical(root),
-        /servers/i
-      );
-    } finally {
-      await rm(root, { recursive: true });
-    }
-  });
+  it("throws on invalid JSON", () => withRoot(async (root) => {
+    await writeFile(join(root, "mcp.servers.json"), "{ bad json }");
+    await assert.rejects(sync.loadCanonical(root), /invalid JSON/i);
+  }));
 
-  it("throws if a stdio server has no command", async () => {
-    const root = await makeRoot();
-    try {
-      await writeFile(
-        join(root, "mcp.servers.json"),
-        JSON.stringify({ servers: { bad: { type: "stdio" } } })
-      );
-      await assert.rejects(
-        () => sync.loadCanonical(root),
-        /command/i
-      );
-    } finally {
-      await rm(root, { recursive: true });
-    }
-  });
+  it("throws if root is an array not object", () => withRoot(async (root) => {
+    await writeFile(join(root, "mcp.servers.json"), JSON.stringify([]));
+    await assert.rejects(sync.loadCanonical(root), /plain object/i);
+  }));
 
-  it("throws if an sse server has no url", async () => {
-    const root = await makeRoot();
-    try {
-      await writeFile(
-        join(root, "mcp.servers.json"),
-        JSON.stringify({ servers: { bad: { type: "sse" } } })
-      );
-      await assert.rejects(
-        () => sync.loadCanonical(root),
-        /url/i
-      );
-    } finally {
-      await rm(root, { recursive: true });
-    }
-  });
+  it("throws if servers field is missing", () => withRoot(async (root) => {
+    await writeFile(join(root, "mcp.servers.json"), JSON.stringify({ other: 1 }));
+    await assert.rejects(sync.loadCanonical(root), /servers/i);
+  }));
 
-  it("throws if a server has an unknown type", async () => {
-    const root = await makeRoot();
-    try {
-      await writeFile(
-        join(root, "mcp.servers.json"),
-        JSON.stringify({ servers: { bad: { type: "websocket", url: "ws://x" } } })
-      );
-      await assert.rejects(
-        () => sync.loadCanonical(root),
-        /type/i
-      );
-    } finally {
-      await rm(root, { recursive: true });
-    }
-  });
+  it("throws if servers is an array", () => withRoot(async (root) => {
+    await writeFile(join(root, "mcp.servers.json"), JSON.stringify({ servers: [] }));
+    await assert.rejects(sync.loadCanonical(root), /plain object/i);
+  }));
+
+  it("throws if stdio server has no command", () => withRoot(async (root) => {
+    await writeFile(join(root, "mcp.servers.json"),
+      JSON.stringify({ servers: { x: { type: "stdio", args: [] } } }));
+    await assert.rejects(sync.loadCanonical(root), /command/i);
+  }));
+
+  it("throws if stdio command is not a string", () => withRoot(async (root) => {
+    await writeFile(join(root, "mcp.servers.json"),
+      JSON.stringify({ servers: { x: { type: "stdio", command: 42, args: [] } } }));
+    await assert.rejects(sync.loadCanonical(root), /string/i);
+  }));
+
+  it("throws if stdio args is not an array", () => withRoot(async (root) => {
+    await writeFile(join(root, "mcp.servers.json"),
+      JSON.stringify({ servers: { x: { type: "stdio", command: "/bin/x", args: "str" } } }));
+    await assert.rejects(sync.loadCanonical(root), /args/i);
+  }));
+
+  it("throws if a stdio arg element is not a string", () => withRoot(async (root) => {
+    await writeFile(join(root, "mcp.servers.json"),
+      JSON.stringify({ servers: { x: { type: "stdio", command: "/bin/x", args: [1, 2] } } }));
+    await assert.rejects(sync.loadCanonical(root), /string/i);
+  }));
+
+  it("throws if env value is not a string", () => withRoot(async (root) => {
+    await writeFile(join(root, "mcp.servers.json"),
+      JSON.stringify({ servers: { x: { type: "stdio", command: "/bin/x", args: [],
+        env: { FOO: 123 } } } }));
+    await assert.rejects(sync.loadCanonical(root), /string/i);
+  }));
+
+  it("throws if sse server has no url", () => withRoot(async (root) => {
+    await writeFile(join(root, "mcp.servers.json"),
+      JSON.stringify({ servers: { x: { type: "sse" } } }));
+    await assert.rejects(sync.loadCanonical(root), /url/i);
+  }));
+
+  it("throws if sse url is not a string", () => withRoot(async (root) => {
+    await writeFile(join(root, "mcp.servers.json"),
+      JSON.stringify({ servers: { x: { type: "sse", url: 99 } } }));
+    await assert.rejects(sync.loadCanonical(root), /string/i);
+  }));
+
+  it("throws on unknown type", () => withRoot(async (root) => {
+    await writeFile(join(root, "mcp.servers.json"),
+      JSON.stringify({ servers: { x: { type: "websocket", url: "ws://x" } } }));
+    await assert.rejects(sync.loadCanonical(root), /type/i);
+  }));
+
+  it("throws on unknown key in stdio server", () => withRoot(async (root) => {
+    await writeFile(join(root, "mcp.servers.json"),
+      JSON.stringify({ servers: { x: { type: "stdio", command: "/bin/x", args: [], extra: 1 } } }));
+    await assert.rejects(sync.loadCanonical(root), /unknown key/i);
+  }));
+
+  it("throws on unknown key in sse server", () => withRoot(async (root) => {
+    await writeFile(join(root, "mcp.servers.json"),
+      JSON.stringify({ servers: { x: { type: "sse", url: "http://x/sse", rogue: true } } }));
+    await assert.rejects(sync.loadCanonical(root), /unknown key/i);
+  }));
+
+  it("throws on reserved server name __proto__", () => withRoot(async (root) => {
+    // Can't use JSON key __proto__ safely; write raw
+    await writeFile(join(root, "mcp.servers.json"),
+      '{"servers":{"__proto__":{"type":"sse","url":"http://x"}}}');
+    await assert.rejects(sync.loadCanonical(root), /reserved/i);
+  }));
+
+  it("throws on ${VAR:-default} interpolation syntax", () => withRoot(async (root) => {
+    await writeFile(join(root, "mcp.servers.json"),
+      JSON.stringify({ servers: { x: { type: "stdio",
+        command: "${HOME:-/usr}/bin/tool", args: [] } } }));
+    await assert.rejects(sync.loadCanonical(root), /not supported/i);
+  }));
+
+  it("accepts sse server with headers", () => withRoot(async (root) => {
+    await writeFile(join(root, "mcp.servers.json"),
+      JSON.stringify({ servers: { x: { type: "sse",
+        url: "http://x/sse", headers: { Authorization: "Bearer tok" } } } }));
+    const c = await sync.loadCanonical(root);
+    assert.equal(c.servers.x.headers.Authorization, "Bearer tok");
+  }));
+
+  it("throws if headers value is not a string", () => withRoot(async (root) => {
+    await writeFile(join(root, "mcp.servers.json"),
+      JSON.stringify({ servers: { x: { type: "sse",
+        url: "http://x/sse", headers: { Tok: 42 } } } }));
+    await assert.rejects(sync.loadCanonical(root), /string/i);
+  }));
 });
 
 // ---------------------------------------------------------------------------
-// 2. translateForOpenCode — ${HOME} → {env:HOME}, stdio → local, sse → remote
+// translateForOpenCode
 // ---------------------------------------------------------------------------
 
 describe("translateForOpenCode", () => {
-  it("translates stdio command ${HOME} references to {env:HOME}", () => {
-    const server = {
-      type: "stdio",
-      command: "${HOME}/.local/bin/uvx",
-      args: ["--flag", "value"],
-      env: { BROWSER: "/bin/true" },
-    };
-    const result = sync.translateForOpenCode("serena", server);
-    assert.equal(result.type, "local");
-    assert.equal(result.command[0], "{env:HOME}/.local/bin/uvx");
-    assert.deepEqual(result.command.slice(1), ["--flag", "value"]);
-    assert.equal(result.environment.BROWSER, "/bin/true");
+  it("stdio → type:local, command array, ${VAR} → {env:VAR}", () => {
+    const r = sync.translateForOpenCode("x", {
+      type: "stdio", command: "${HOME}/.local/bin/uvx",
+      args: ["-p", "3.13"], env: { BROWSER: "/bin/true" },
+    });
+    assert.equal(r.type, "local");
+    assert.deepEqual(r.command, ["{env:HOME}/.local/bin/uvx", "-p", "3.13"]);
+    assert.deepEqual(r.environment, { BROWSER: "/bin/true" });
   });
 
-  it("translates sse server to remote type", () => {
-    const server = { type: "sse", url: "http://127.0.0.1:64342/sse" };
-    const result = sync.translateForOpenCode("jetbrains", server);
-    assert.equal(result.type, "remote");
-    assert.equal(result.url, "http://127.0.0.1:64342/sse");
+  it("sse → type:remote, url preserved", () => {
+    const r = sync.translateForOpenCode("x", { type: "sse", url: "http://h/sse" });
+    assert.equal(r.type, "remote");
+    assert.equal(r.url, "http://h/sse");
+    assert.ok(!("command" in r));
+    assert.ok(!("environment" in r));
   });
 
-  it("does not expand ${HOME} — keeps literal {env:HOME}", () => {
-    const server = {
-      type: "stdio",
-      command: "${HOME}/.local/bin/uvx",
-      args: [],
-    };
-    const result = sync.translateForOpenCode("x", server);
-    // Must not contain the actual $HOME expansion
-    const homeVal = process.env.HOME;
-    assert.ok(!result.command[0].includes(homeVal), "must not expand HOME");
-    assert.ok(result.command[0].includes("{env:HOME}"), "must use {env:HOME}");
+  it("does not expand ${HOME} — uses literal process env at runtime", () => {
+    const r = sync.translateForOpenCode("x", {
+      type: "stdio", command: "${HOME}/bin/x", args: [],
+    });
+    assert.ok(!r.command[0].includes(process.env.HOME ?? "__MISSING__"),
+      "must not expand HOME at generation time");
+    assert.equal(r.command[0], "{env:HOME}/bin/x");
   });
 
-  it("translates ${HOME} in args", () => {
-    const server = {
-      type: "stdio",
-      command: "/usr/bin/env",
-      args: ["${HOME}/bin/tool"],
-    };
-    const result = sync.translateForOpenCode("x", server);
-    assert.equal(result.command[1], "{env:HOME}/bin/tool");
+  it("translates ${VAR} in args", () => {
+    const r = sync.translateForOpenCode("x", {
+      type: "stdio", command: "/bin/x", args: ["${MYVAR}/path"],
+    });
+    assert.equal(r.command[1], "{env:MYVAR}/path");
   });
 
-  it("translates ${HOME} in env values", () => {
-    const server = {
-      type: "stdio",
-      command: "/usr/bin/env",
-      args: [],
-      env: { PATH: "${HOME}/.local/bin:/usr/bin" },
-    };
-    const result = sync.translateForOpenCode("x", server);
-    assert.equal(result.environment.PATH, "{env:HOME}/.local/bin:/usr/bin");
+  it("translates ${VAR} in env values", () => {
+    const r = sync.translateForOpenCode("x", {
+      type: "stdio", command: "/bin/x", args: [],
+      env: { PATH: "${HOME}/.local/bin:${PATH}" },
+    });
+    assert.equal(r.environment.PATH, "{env:HOME}/.local/bin:{env:PATH}");
   });
 
-  it("maps env to environment field", () => {
-    const server = {
-      type: "stdio",
-      command: "/usr/bin/node",
-      args: [],
-      env: { FOO: "bar" },
-    };
-    const result = sync.translateForOpenCode("x", server);
-    assert.ok("environment" in result, "has environment");
-    assert.equal(result.environment.FOO, "bar");
+  it("omits environment when env absent", () => {
+    const r = sync.translateForOpenCode("x", { type: "stdio", command: "/bin/x", args: [] });
+    assert.ok(!("environment" in r));
   });
 
-  it("omits environment when canonical env is absent", () => {
-    const server = { type: "stdio", command: "/usr/bin/node", args: [] };
-    const result = sync.translateForOpenCode("x", server);
-    assert.ok(!("environment" in result), "no environment key when no env");
+  it("omits environment when env is empty object", () => {
+    const r = sync.translateForOpenCode("x", { type: "stdio", command: "/bin/x", args: [], env: {} });
+    assert.ok(!("environment" in r));
+  });
+
+  it("sse with headers preserved as-is", () => {
+    const r = sync.translateForOpenCode("x", {
+      type: "sse", url: "http://h/sse", headers: { Authorization: "Bearer t" },
+    });
+    assert.deepEqual(r.headers, { Authorization: "Bearer t" });
   });
 });
 
 // ---------------------------------------------------------------------------
-// 3. translateForClaude — ${HOME} stays as-is (Claude supports it), stdio →
-//    command/args structure, sse → url structure
+// translateForClaude
 // ---------------------------------------------------------------------------
 
 describe("translateForClaude", () => {
-  it("preserves ${HOME} references unchanged (no translation needed)", () => {
-    const server = {
-      type: "stdio",
-      command: "${HOME}/.local/bin/uvx",
-      args: ["--flag"],
-      env: { BROWSER: "/bin/true" },
-    };
-    const result = sync.translateForClaude("serena", server);
-    assert.equal(result.command, "${HOME}/.local/bin/uvx");
-    assert.deepEqual(result.args, ["--flag"]);
-    assert.equal(result.env.BROWSER, "/bin/true");
+  it("stdio → type:stdio, command string, args, env", () => {
+    const r = sync.translateForClaude("x", {
+      type: "stdio", command: "${HOME}/.local/bin/uvx",
+      args: ["-p", "3.13"], env: { BROWSER: "/bin/true" },
+    });
+    assert.equal(r.type, "stdio");
+    assert.equal(r.command, "${HOME}/.local/bin/uvx");
+    assert.deepEqual(r.args, ["-p", "3.13"]);
+    assert.deepEqual(r.env, { BROWSER: "/bin/true" });
   });
 
-  it("produces command/args/env shape for stdio", () => {
-    const server = {
-      type: "stdio",
-      command: "/usr/bin/node",
-      args: ["a", "b"],
-      env: { X: "1" },
-    };
-    const result = sync.translateForClaude("x", server);
-    assert.equal(result.command, "/usr/bin/node");
-    assert.deepEqual(result.args, ["a", "b"]);
-    assert.deepEqual(result.env, { X: "1" });
-    assert.ok(!("type" in result), "no type in Claude stdio entry");
+  it("sse → type:sse, url — type field required", () => {
+    const r = sync.translateForClaude("x", { type: "sse", url: "http://h/sse" });
+    assert.equal(r.type, "sse");
+    assert.equal(r.url, "http://h/sse");
+    assert.ok(!("command" in r));
+    assert.ok(!("env" in r));
   });
 
-  it("produces url shape for sse (no type key in output)", () => {
-    const server = { type: "sse", url: "http://127.0.0.1:64342/sse" };
-    const result = sync.translateForClaude("jetbrains", server);
-    assert.equal(result.url, "http://127.0.0.1:64342/sse");
-    // Claude .mcp.json uses no explicit type for SSE — just url
-    assert.ok(!("type" in result), "no type in Claude sse entry");
+  it("${VAR} preserved unchanged in stdio command", () => {
+    const r = sync.translateForClaude("x", {
+      type: "stdio", command: "${HOME}/bin/x", args: [],
+    });
+    assert.equal(r.command, "${HOME}/bin/x");
   });
 
-  it("omits env when canonical env is absent", () => {
-    const server = { type: "stdio", command: "/usr/bin/node", args: [] };
-    const result = sync.translateForClaude("x", server);
-    assert.ok(!("env" in result), "no env key when absent");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 4. generateOpenCode — merges canonical into opencode.json mcp section
-// ---------------------------------------------------------------------------
-
-describe("generateOpenCode", () => {
-  it("writes projected mcp entries to opencode.json (fresh)", async () => {
-    const root = await makeRoot();
-    try {
-      await writeCanonical(root);
-      await writeOpenCode(root, {
-        "$schema": "https://opencode.ai/config.json",
-        "permission": { "edit": "allow" },
-      });
-      await sync.generate(root, { dryRun: false, adopt: false });
-      const out = await readJSON(join(root, "opencode.json"));
-      assert.ok(out.mcp.serena, "serena written");
-      assert.ok(out.mcp.jetbrains, "jetbrains written");
-      // Verify translation applied
-      assert.equal(out.mcp.serena.type, "local");
-      assert.equal(out.mcp.serena.command[0], "{env:HOME}/.local/bin/uvx");
-      assert.equal(out.mcp.jetbrains.type, "remote");
-      // Unrelated fields preserved
-      assert.deepEqual(out.permission, { edit: "allow" });
-    } finally {
-      await rm(root, { recursive: true });
-    }
+  it("omits env when absent", () => {
+    const r = sync.translateForClaude("x", { type: "stdio", command: "/bin/x", args: [] });
+    assert.ok(!("env" in r));
   });
 
-  it("writes projected mcp entries to .mcp.json (fresh)", async () => {
-    const root = await makeRoot();
-    try {
-      await writeCanonical(root);
-      await sync.generate(root, { dryRun: false, adopt: false });
-      const out = await readJSON(join(root, ".mcp.json"));
-      assert.ok(out.mcpServers.serena, "serena in .mcp.json");
-      assert.ok(out.mcpServers.jetbrains, "jetbrains in .mcp.json");
-      // Claude preserves ${HOME}
-      assert.equal(out.mcpServers.serena.command, "${HOME}/.local/bin/uvx");
-      assert.deepEqual(out.mcpServers.serena.args, CANONICAL_SERENA.args);
-    } finally {
-      await rm(root, { recursive: true });
-    }
+  it("omits env when env is empty object", () => {
+    const r = sync.translateForClaude("x", { type: "stdio", command: "/bin/x", args: [], env: {} });
+    assert.ok(!("env" in r));
   });
 
-  it("is idempotent — running twice produces the same output", async () => {
-    const root = await makeRoot();
-    try {
-      await writeCanonical(root);
-      await sync.generate(root, { dryRun: false, adopt: false });
-      const first = {
-        oc: await readJSON(join(root, "opencode.json")),
-        cl: await readJSON(join(root, ".mcp.json")),
-      };
-      await sync.generate(root, { dryRun: false, adopt: false });
-      const second = {
-        oc: await readJSON(join(root, "opencode.json")),
-        cl: await readJSON(join(root, ".mcp.json")),
-      };
-      assert.deepEqual(first, second, "idempotent");
-    } finally {
-      await rm(root, { recursive: true });
-    }
-  });
-
-  it("preserves unrelated mcp entries in opencode.json", async () => {
-    const root = await makeRoot();
-    try {
-      await writeCanonical(root);
-      await writeOpenCode(root, {
-        mcp: {
-          unrelated: { type: "local", command: ["node", "foo.mjs"] },
-        },
-      });
-      await sync.generate(root, { dryRun: false, adopt: false });
-      const out = await readJSON(join(root, "opencode.json"));
-      assert.ok(out.mcp.unrelated, "unrelated entry preserved");
-      assert.ok(out.mcp.serena, "managed serena present");
-    } finally {
-      await rm(root, { recursive: true });
-    }
-  });
-
-  it("preserves unrelated mcpServers in .mcp.json", async () => {
-    const root = await makeRoot();
-    try {
-      await writeCanonical(root);
-      await writeClaudeMcp(root, {
-        mcpServers: { other: { command: "other-tool", args: [] } },
-      });
-      await sync.generate(root, { dryRun: false, adopt: false });
-      const out = await readJSON(join(root, ".mcp.json"));
-      assert.ok(out.mcpServers.other, "unrelated entry preserved");
-      assert.ok(out.mcpServers.serena, "managed serena present");
-    } finally {
-      await rm(root, { recursive: true });
-    }
-  });
-
-  it("dry-run does not write files", async () => {
-    const root = await makeRoot();
-    try {
-      await writeCanonical(root);
-      await sync.generate(root, { dryRun: true, adopt: false });
-      assert.ok(
-        !existsSync(join(root, "opencode.json")),
-        "opencode.json not created in dry-run"
-      );
-      assert.ok(
-        !existsSync(join(root, ".mcp.json")),
-        ".mcp.json not created in dry-run"
-      );
-    } finally {
-      await rm(root, { recursive: true });
-    }
-  });
-
-  it("dry-run returns expected projected content", async () => {
-    const root = await makeRoot();
-    try {
-      await writeCanonical(root);
-      const result = await sync.generate(root, { dryRun: true, adopt: false });
-      assert.ok(result, "returns result in dry-run");
-      assert.ok(result.opencode, "has opencode projection");
-      assert.ok(result.claude, "has claude projection");
-      assert.ok(result.opencode.mcp.serena, "opencode has serena");
-      assert.ok(result.claude.mcpServers.serena, "claude has serena");
-    } finally {
-      await rm(root, { recursive: true });
-    }
+  it("sse with headers", () => {
+    const r = sync.translateForClaude("x", {
+      type: "sse", url: "http://h/sse", headers: { Authorization: "Bearer t" },
+    });
+    assert.deepEqual(r.headers, { Authorization: "Bearer t" });
   });
 });
 
 // ---------------------------------------------------------------------------
-// 5. Conflict detection — refuse to edit existing entries not managed by us
+// generate — correct projection shape
+// ---------------------------------------------------------------------------
+
+describe("generate — projection shape", () => {
+  it("fresh run writes correct opencode.json structure", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await sync.generate(root, { dryRun: false, adopt: false });
+    const oc = await rJSON(join(root, "opencode.json"));
+    assert.equal(oc.mcp.serena.type, "local");
+    assert.equal(oc.mcp.serena.command[0], "{env:HOME}/.local/bin/uvx");
+    assert.equal(oc.mcp.serena.environment.BROWSER, "/bin/true");
+    assert.equal(oc.mcp.jetbrains.type, "remote");
+    assert.equal(oc.mcp.jetbrains.url, "http://127.0.0.1:64342/sse");
+  }));
+
+  it("fresh run writes correct .mcp.json structure", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await sync.generate(root, { dryRun: false, adopt: false });
+    const cl = await rJSON(join(root, ".mcp.json"));
+    // stdio: type:stdio required
+    assert.equal(cl.mcpServers.serena.type, "stdio");
+    assert.equal(cl.mcpServers.serena.command, "${HOME}/.local/bin/uvx");
+    assert.deepEqual(cl.mcpServers.serena.args, SRV_SERENA.args);
+    assert.deepEqual(cl.mcpServers.serena.env, { BROWSER: "/bin/true" });
+    // sse: type:sse required
+    assert.equal(cl.mcpServers.jetbrains.type, "sse");
+    assert.equal(cl.mcpServers.jetbrains.url, "http://127.0.0.1:64342/sse");
+  }));
+
+  it("preserves unrelated opencode.json settings", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await wOC(root, { permission: { edit: "allow" }, mcp: {} });
+    await sync.generate(root, { dryRun: false, adopt: false });
+    const oc = await rJSON(join(root, "opencode.json"));
+    assert.deepEqual(oc.permission, { edit: "allow" });
+  }));
+
+  it("preserves unrelated opencode.json mcp entries", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await wOC(root, { mcp: { other: { type: "local", command: ["node", "x.mjs"] } } });
+    await sync.generate(root, { dryRun: false, adopt: false });
+    const oc = await rJSON(join(root, "opencode.json"));
+    assert.deepEqual(oc.mcp.other, { type: "local", command: ["node", "x.mjs"] });
+    assert.ok(oc.mcp.serena);
+  }));
+
+  it("preserves unrelated .mcp.json mcpServers entries", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await wCL(root, { mcpServers: { other: { type: "stdio", command: "x", args: [] } } });
+    await sync.generate(root, { dryRun: false, adopt: false });
+    const cl = await rJSON(join(root, ".mcp.json"));
+    assert.deepEqual(cl.mcpServers.other, { type: "stdio", command: "x", args: [] });
+    assert.ok(cl.mcpServers.serena);
+  }));
+
+  it("dry-run returns projected content without writing", () => withRoot(async (root) => {
+    await wCanonical(root);
+    const result = await sync.generate(root, { dryRun: true, adopt: false });
+    assert.ok(!existsSync(join(root, "opencode.json")));
+    assert.ok(!existsSync(join(root, ".mcp.json")));
+    assert.equal(result.opencode.mcp.serena.type, "local");
+    assert.equal(result.claude.mcpServers.serena.type, "stdio");
+    assert.equal(result.claude.mcpServers.jetbrains.type, "sse");
+  }));
+});
+
+// ---------------------------------------------------------------------------
+// Idempotence — no writes when content unchanged
+// ---------------------------------------------------------------------------
+
+describe("idempotence", () => {
+  it("second run produces byte-identical files", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await sync.generate(root, { dryRun: false, adopt: false });
+    const oc1 = await readFile(join(root, "opencode.json"), "utf8");
+    const cl1 = await readFile(join(root, ".mcp.json"), "utf8");
+    const mf1 = await readFile(join(root, ".mcp.manifest.json"), "utf8");
+    await sync.generate(root, { dryRun: false, adopt: false });
+    assert.equal(await readFile(join(root, "opencode.json"), "utf8"), oc1);
+    assert.equal(await readFile(join(root, ".mcp.json"), "utf8"), cl1);
+    assert.equal(await readFile(join(root, ".mcp.manifest.json"), "utf8"), mf1);
+  }));
+});
+
+// ---------------------------------------------------------------------------
+// Conflict detection — snapshot-based
 // ---------------------------------------------------------------------------
 
 describe("conflict detection", () => {
-  it("fails if opencode.json has a conflicting serena entry without --adopt", async () => {
-    const root = await makeRoot();
-    try {
-      await writeCanonical(root);
-      await writeOpenCode(root, {
-        mcp: {
-          serena: { type: "local", command: ["some-other-command"] },
-        },
-      });
-      await assert.rejects(
-        () => sync.generate(root, { dryRun: false, adopt: false }),
-        /conflict|managed|serena/i
-      );
-    } finally {
-      await rm(root, { recursive: true });
-    }
-  });
+  it("rejects unmanaged conflicting serena in opencode.json", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await wOC(root, { mcp: { serena: { type: "local", command: ["other"] } } });
+    await assert.rejects(
+      sync.generate(root, { dryRun: false, adopt: false }),
+      /serena.*not managed|not managed.*serena|adopt/i
+    );
+  }));
 
-  it("fails if .mcp.json has a conflicting serena entry without --adopt", async () => {
-    const root = await makeRoot();
-    try {
-      await writeCanonical(root);
-      await writeClaudeMcp(root, {
-        mcpServers: { serena: { command: "other-serena", args: [] } },
-      });
-      await assert.rejects(
-        () => sync.generate(root, { dryRun: false, adopt: false }),
-        /conflict|managed|serena/i
-      );
-    } finally {
-      await rm(root, { recursive: true });
-    }
-  });
+  it("rejects unmanaged conflicting jetbrains in .mcp.json", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await wCL(root, { mcpServers: { jetbrains: { type: "sse", url: "http://other/sse" } } });
+    await assert.rejects(
+      sync.generate(root, { dryRun: false, adopt: false }),
+      /jetbrains.*not managed|not managed.*jetbrains|adopt/i
+    );
+  }));
 
-  it("fails if opencode.json has a conflicting jetbrains entry without --adopt", async () => {
-    const root = await makeRoot();
-    try {
-      await writeCanonical(root);
-      await writeOpenCode(root, {
-        mcp: {
-          jetbrains: { type: "remote", url: "http://127.0.0.1:99999/sse" },
-        },
-      });
-      await assert.rejects(
-        () => sync.generate(root, { dryRun: false, adopt: false }),
-        /conflict|managed|jetbrains/i
-      );
-    } finally {
-      await rm(root, { recursive: true });
-    }
-  });
+  it("--adopt overrides conflict on initial migration", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await wOC(root, { mcp: { serena: { type: "local", command: ["old"] } } });
+    await sync.generate(root, { dryRun: false, adopt: true });
+    const oc = await rJSON(join(root, "opencode.json"));
+    assert.equal(oc.mcp.serena.command[0], "{env:HOME}/.local/bin/uvx");
+  }));
 
-  it("succeeds with --adopt for initial migration of existing entries", async () => {
-    const root = await makeRoot();
-    try {
-      await writeCanonical(root);
-      await writeOpenCode(root, {
-        mcp: {
-          serena: { type: "local", command: ["old-serena"] },
-        },
-      });
-      // Should not throw with adopt
-      await sync.generate(root, { dryRun: false, adopt: true });
-      const out = await readJSON(join(root, "opencode.json"));
-      // After adopt, managed entry replaces old
-      assert.equal(out.mcp.serena.command[0], "{env:HOME}/.local/bin/uvx");
-    } finally {
-      await rm(root, { recursive: true });
-    }
-  });
+  it("rejects externally modified managed entry without --adopt", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await sync.generate(root, { dryRun: false, adopt: false });
+    // Externally tamper with the managed serena entry
+    const oc = await rJSON(join(root, "opencode.json"));
+    oc.mcp.serena.command[0] = "externally-changed";
+    await writeFile(join(root, "opencode.json"), JSON.stringify(oc, null, 2));
+    await assert.rejects(
+      sync.generate(root, { dryRun: false, adopt: false }),
+      /externally modified|adopt/i
+    );
+  }));
 
-  it("treats a correctly projected managed entry as non-conflicting (drift-free)", async () => {
-    const root = await makeRoot();
-    try {
-      await writeCanonical(root);
-      // First generation
-      await sync.generate(root, { dryRun: false, adopt: false });
-      // Second generation should not conflict
-      await sync.generate(root, { dryRun: false, adopt: false });
-    } finally {
-      await rm(root, { recursive: true });
-    }
-  });
+  it("--adopt allows overwriting externally modified managed entry", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await sync.generate(root, { dryRun: false, adopt: false });
+    const oc = await rJSON(join(root, "opencode.json"));
+    oc.mcp.serena.command[0] = "externally-changed";
+    await writeFile(join(root, "opencode.json"), JSON.stringify(oc, null, 2));
+    await sync.generate(root, { dryRun: false, adopt: true });
+    const oc2 = await rJSON(join(root, "opencode.json"));
+    assert.equal(oc2.mcp.serena.command[0], "{env:HOME}/.local/bin/uvx");
+  }));
+
+  it("second run with unchanged managed entries does not conflict", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await sync.generate(root, { dryRun: false, adopt: false });
+    await sync.generate(root, { dryRun: false, adopt: false });
+  }));
+
+  it("non-conflicting unmanaged entry (same value) does not fail", () => withRoot(async (root) => {
+    await wCanonical(root);
+    // Write an entry that already matches what we'd project
+    const projected = sync.translateForOpenCode("serena", SRV_SERENA);
+    await wOC(root, { mcp: { serena: projected } });
+    // Should not throw — value matches projected
+    await sync.generate(root, { dryRun: false, adopt: false });
+  }));
 });
 
 // ---------------------------------------------------------------------------
-// 6. check() — validates that projections match canonical (drift detection)
+// Manifest — snapshot-based ownership
 // ---------------------------------------------------------------------------
 
-describe("check", () => {
-  it("check passes when projections are up to date", async () => {
-    const root = await makeRoot();
-    try {
-      await writeCanonical(root);
-      await sync.generate(root, { dryRun: false, adopt: false });
-      const result = await sync.check(root);
-      assert.equal(result.ok, true);
-      assert.equal(result.drifted.length, 0);
-    } finally {
-      await rm(root, { recursive: true });
-    }
-  });
+describe("manifest", () => {
+  it("writes managed list and per-target snapshots", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await sync.generate(root, { dryRun: false, adopt: false });
+    const mf = await rJSON(join(root, ".mcp.manifest.json"));
+    assert.deepEqual(mf.managed.sort(), ["jetbrains", "serena"]);
+    assert.ok(mf.snapshots["oc:serena"]);
+    assert.ok(mf.snapshots["cl:serena"]);
+    assert.ok(mf.snapshots["oc:jetbrains"]);
+    assert.ok(mf.snapshots["cl:jetbrains"]);
+    // Snapshot content must match projected values
+    assert.deepEqual(mf.snapshots["oc:serena"], sync.translateForOpenCode("serena", SRV_SERENA));
+    assert.deepEqual(mf.snapshots["cl:jetbrains"], sync.translateForClaude("jetbrains", SRV_JETBRAINS));
+  }));
 
-  it("check detects drift in opencode.json", async () => {
-    const root = await makeRoot();
-    try {
-      await writeCanonical(root);
-      await sync.generate(root, { dryRun: false, adopt: false });
-      // Manually tamper
-      const oc = await readJSON(join(root, "opencode.json"));
-      oc.mcp.serena.command[0] = "tampered";
-      await writeFile(join(root, "opencode.json"), JSON.stringify(oc, null, 2));
-      const result = await sync.check(root);
-      assert.equal(result.ok, false);
-      assert.ok(result.drifted.some((d) => /opencode/i.test(d)));
-    } finally {
-      await rm(root, { recursive: true });
-    }
-  });
+  it("manifest does not include unrelated entries", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await wOC(root, { mcp: { unrelated: { type: "local", command: ["x"] } } });
+    await sync.generate(root, { dryRun: false, adopt: false });
+    const mf = await rJSON(join(root, ".mcp.manifest.json"));
+    assert.ok(!mf.managed.includes("unrelated"));
+    assert.ok(!mf.snapshots["oc:unrelated"]);
+  }));
 
-  it("check detects drift in .mcp.json", async () => {
-    const root = await makeRoot();
-    try {
-      await writeCanonical(root);
-      await sync.generate(root, { dryRun: false, adopt: false });
-      // Manually tamper
-      const cl = await readJSON(join(root, ".mcp.json"));
-      cl.mcpServers.serena.command = "tampered";
-      await writeFile(join(root, ".mcp.json"), JSON.stringify(cl, null, 2));
-      const result = await sync.check(root);
-      assert.equal(result.ok, false);
-      assert.ok(result.drifted.some((d) => /mcp\.json/i.test(d)));
-    } finally {
-      await rm(root, { recursive: true });
-    }
-  });
+  it("manifest updated when server removed from canonical", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await sync.generate(root, { dryRun: false, adopt: false });
+    await wCanonical(root, { serena: SRV_SERENA });
+    await sync.generate(root, { dryRun: false, adopt: false });
+    const mf = await rJSON(join(root, ".mcp.manifest.json"));
+    assert.deepEqual(mf.managed, ["serena"]);
+    assert.ok(!mf.snapshots["oc:jetbrains"]);
+    assert.ok(!mf.snapshots["cl:jetbrains"]);
+  }));
 
-  it("check reports missing .mcp.json as drift", async () => {
-    const root = await makeRoot();
-    try {
-      await writeCanonical(root);
-      // Only write opencode.json
-      await sync.generate(root, { dryRun: false, adopt: false });
-      // Remove .mcp.json
-      const { unlink } = await import("node:fs/promises");
-      await unlink(join(root, ".mcp.json"));
-      const result = await sync.check(root);
-      assert.equal(result.ok, false);
-    } finally {
-      await rm(root, { recursive: true });
-    }
-  });
+  it("throws on malformed manifest JSON", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await writeFile(join(root, ".mcp.manifest.json"), "{ broken");
+    await assert.rejects(
+      sync.generate(root, { dryRun: false, adopt: false }),
+      /invalid JSON/i
+    );
+  }));
 
-  it("check reports missing opencode.json as drift", async () => {
-    const root = await makeRoot();
-    try {
-      await writeCanonical(root);
-      const result = await sync.check(root);
-      assert.equal(result.ok, false);
-    } finally {
-      await rm(root, { recursive: true });
-    }
-  });
+  it("throws if manifest managed is not an array", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await writeFile(join(root, ".mcp.manifest.json"),
+      JSON.stringify({ managed: "bad", snapshots: {} }));
+    await assert.rejects(
+      sync.generate(root, { dryRun: false, adopt: false }),
+      /managed.*array|array/i
+    );
+  }));
 });
 
 // ---------------------------------------------------------------------------
-// 7. Symlink safety — refuse to write if target is a symlink
-// ---------------------------------------------------------------------------
-
-describe("symlink safety", () => {
-  it("refuses to write opencode.json if it is a symlink", async () => {
-    const root = await makeRoot();
-    try {
-      await writeCanonical(root);
-      // Create symlink pointing somewhere
-      const target = join(root, "opencode.real.json");
-      await writeFile(target, JSON.stringify({}));
-      const { symlink } = await import("node:fs/promises");
-      await symlink(target, join(root, "opencode.json"));
-      await assert.rejects(
-        () => sync.generate(root, { dryRun: false, adopt: false }),
-        /symlink|opencode\.json/i
-      );
-    } finally {
-      await rm(root, { recursive: true });
-    }
-  });
-
-  it("refuses to write .mcp.json if it is a symlink", async () => {
-    const root = await makeRoot();
-    try {
-      await writeCanonical(root);
-      const target = join(root, "mcp.real.json");
-      await writeFile(target, JSON.stringify({}));
-      const { symlink } = await import("node:fs/promises");
-      await symlink(target, join(root, ".mcp.json"));
-      await assert.rejects(
-        () => sync.generate(root, { dryRun: false, adopt: false }),
-        /symlink|\.mcp\.json/i
-      );
-    } finally {
-      await rm(root, { recursive: true });
-    }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 8. Removed-entry safe semantics — entries removed from canonical are removed
-//    from projections (if they were managed)
+// Removed-entry semantics
 // ---------------------------------------------------------------------------
 
 describe("removed-entry semantics", () => {
-  it("removes a previously managed entry when removed from canonical", async () => {
-    const root = await makeRoot();
-    try {
-      // First: generate with both servers
-      await writeCanonical(root);
-      await sync.generate(root, { dryRun: false, adopt: false });
+  it("removes previously managed entry from both projections when dropped from canonical", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await sync.generate(root, { dryRun: false, adopt: false });
+    await wCanonical(root, { serena: SRV_SERENA });
+    await sync.generate(root, { dryRun: false, adopt: false });
+    const oc = await rJSON(join(root, "opencode.json"));
+    const cl = await rJSON(join(root, ".mcp.json"));
+    assert.ok(!oc.mcp.jetbrains, "jetbrains removed from opencode.json");
+    assert.ok(!cl.mcpServers.jetbrains, "jetbrains removed from .mcp.json");
+  }));
 
-      // Now update canonical to remove jetbrains
-      await writeCanonical(root, {
-        servers: { serena: CANONICAL_SERENA },
-      });
-      await sync.generate(root, { dryRun: false, adopt: false });
+  it("does not remove unrelated entries when canonical shrinks", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await wOC(root, { mcp: { unrelated: { type: "local", command: ["x"] } } });
+    await sync.generate(root, { dryRun: false, adopt: false });
+    await wCanonical(root, { serena: SRV_SERENA });
+    await sync.generate(root, { dryRun: false, adopt: false });
+    const oc = await rJSON(join(root, "opencode.json"));
+    assert.ok(oc.mcp.unrelated, "unrelated preserved");
+    assert.ok(!oc.mcp.jetbrains, "jetbrains gone");
+  }));
 
-      const oc = await readJSON(join(root, "opencode.json"));
-      assert.ok(!oc.mcp.jetbrains, "jetbrains removed from opencode.json");
-
-      const cl = await readJSON(join(root, ".mcp.json"));
-      assert.ok(!cl.mcpServers.jetbrains, "jetbrains removed from .mcp.json");
-    } finally {
-      await rm(root, { recursive: true });
-    }
-  });
-
-  it("does not remove unrelated entries when a canonical entry is removed", async () => {
-    const root = await makeRoot();
-    try {
-      await writeCanonical(root);
-      await writeOpenCode(root, {
-        mcp: { unrelated: { type: "local", command: ["node", "other.mjs"] } },
-      });
-      await sync.generate(root, { dryRun: false, adopt: false });
-
-      // Remove jetbrains from canonical
-      await writeCanonical(root, {
-        servers: { serena: CANONICAL_SERENA },
-      });
-      await sync.generate(root, { dryRun: false, adopt: false });
-
-      const oc = await readJSON(join(root, "opencode.json"));
-      assert.ok(oc.mcp.unrelated, "unrelated preserved");
-      assert.ok(!oc.mcp.jetbrains, "jetbrains removed");
-    } finally {
-      await rm(root, { recursive: true });
-    }
-  });
+  it("no-op when managed entry already absent from target", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await sync.generate(root, { dryRun: false, adopt: false });
+    // Remove jetbrains from file manually
+    const oc = await rJSON(join(root, "opencode.json"));
+    delete oc.mcp.jetbrains;
+    await writeFile(join(root, "opencode.json"), JSON.stringify(oc, null, 2));
+    // Now drop from canonical — should succeed
+    await wCanonical(root, { serena: SRV_SERENA });
+    await sync.generate(root, { dryRun: false, adopt: false });
+  }));
 });
 
 // ---------------------------------------------------------------------------
-// 9. Manifest / ownership tracking — managed names known across runs
+// check — drift detection
 // ---------------------------------------------------------------------------
 
-describe("manifest tracking", () => {
-  it("writes a manifest file recording managed server names", async () => {
-    const root = await makeRoot();
-    try {
-      await writeCanonical(root);
-      await sync.generate(root, { dryRun: false, adopt: false });
-      assert.ok(existsSync(join(root, ".mcp.manifest.json")), "manifest written");
-      const manifest = await readJSON(join(root, ".mcp.manifest.json"));
-      assert.ok(Array.isArray(manifest.managed), "manifest.managed is array");
-      assert.ok(manifest.managed.includes("serena"), "serena in manifest");
-      assert.ok(manifest.managed.includes("jetbrains"), "jetbrains in manifest");
-    } finally {
-      await rm(root, { recursive: true });
-    }
-  });
+describe("check", () => {
+  it("ok when projections are up to date", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await sync.generate(root, { dryRun: false, adopt: false });
+    const r = await sync.check(root);
+    assert.equal(r.ok, true);
+    assert.deepEqual(r.drifted, []);
+  }));
 
-  it("manifest does not list unrelated entries", async () => {
-    const root = await makeRoot();
-    try {
-      await writeCanonical(root);
-      await writeOpenCode(root, {
-        mcp: { unrelated: { type: "local", command: ["x"] } },
-      });
-      await sync.generate(root, { dryRun: false, adopt: false });
-      const manifest = await readJSON(join(root, ".mcp.manifest.json"));
-      assert.ok(!manifest.managed.includes("unrelated"));
-    } finally {
-      await rm(root, { recursive: true });
-    }
-  });
+  it("detects drift in opencode.json managed entry", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await sync.generate(root, { dryRun: false, adopt: false });
+    const oc = await rJSON(join(root, "opencode.json"));
+    oc.mcp.serena.command[0] = "tampered";
+    await writeFile(join(root, "opencode.json"), JSON.stringify(oc, null, 2));
+    const r = await sync.check(root);
+    assert.equal(r.ok, false);
+    assert.ok(r.drifted.some((d) => /opencode\.json/i.test(d) && /serena/.test(d)));
+  }));
 
-  it("manifest is updated when servers change", async () => {
-    const root = await makeRoot();
-    try {
-      await writeCanonical(root);
-      await sync.generate(root, { dryRun: false, adopt: false });
+  it("detects drift in .mcp.json managed entry", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await sync.generate(root, { dryRun: false, adopt: false });
+    const cl = await rJSON(join(root, ".mcp.json"));
+    cl.mcpServers.jetbrains.url = "http://tampered/sse";
+    await writeFile(join(root, ".mcp.json"), JSON.stringify(cl, null, 2));
+    const r = await sync.check(root);
+    assert.equal(r.ok, false);
+    assert.ok(r.drifted.some((d) => /\.mcp\.json/i.test(d) && /jetbrains/.test(d)));
+  }));
 
-      // Remove jetbrains
-      await writeCanonical(root, { servers: { serena: CANONICAL_SERENA } });
-      await sync.generate(root, { dryRun: false, adopt: false });
+  it("reports missing opencode.json as not-ok", () => withRoot(async (root) => {
+    await wCanonical(root);
+    const r = await sync.check(root);
+    assert.equal(r.ok, false);
+    assert.ok(r.drifted.some((d) => /opencode\.json/.test(d)));
+  }));
 
-      const manifest = await readJSON(join(root, ".mcp.manifest.json"));
-      assert.ok(manifest.managed.includes("serena"), "serena still managed");
-      assert.ok(!manifest.managed.includes("jetbrains"), "jetbrains no longer managed");
-    } finally {
-      await rm(root, { recursive: true });
-    }
-  });
+  it("reports missing .mcp.json as not-ok", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await sync.generate(root, { dryRun: false, adopt: false });
+    await unlink(join(root, ".mcp.json"));
+    const r = await sync.check(root);
+    assert.equal(r.ok, false);
+    assert.ok(r.drifted.some((d) => /\.mcp\.json/.test(d)));
+  }));
 
-  it("uses manifest to identify previously managed entries for safe removal", async () => {
-    const root = await makeRoot();
-    try {
-      await writeCanonical(root);
-      await sync.generate(root, { dryRun: false, adopt: false });
-
-      // Remove jetbrains from canonical; ensure the manifest allows removal
-      await writeCanonical(root, { servers: { serena: CANONICAL_SERENA } });
-      // Should not conflict — jetbrains was managed
-      await sync.generate(root, { dryRun: false, adopt: false });
-
-      const oc = await readJSON(join(root, "opencode.json"));
-      assert.ok(!oc.mcp.jetbrains, "jetbrains removed safely");
-    } finally {
-      await rm(root, { recursive: true });
-    }
-  });
-
-  it("previously managed entry not in canonical and not in target is a no-op removal", async () => {
-    const root = await makeRoot();
-    try {
-      await writeCanonical(root);
-      await sync.generate(root, { dryRun: false, adopt: false });
-      // Manually remove jetbrains from output and manifest — simulate partial state
-      const oc = await readJSON(join(root, "opencode.json"));
-      delete oc.mcp.jetbrains;
-      await writeFile(join(root, "opencode.json"), JSON.stringify(oc, null, 2));
-      // Now remove from canonical too — should succeed without error
-      await writeCanonical(root, { servers: { serena: CANONICAL_SERENA } });
-      await sync.generate(root, { dryRun: false, adopt: false });
-    } finally {
-      await rm(root, { recursive: true });
-    }
-  });
+  it("ok when canonical has no servers and files are empty projections", () => withRoot(async (root) => {
+    await writeFile(join(root, "mcp.servers.json"), JSON.stringify({ servers: {} }));
+    await sync.generate(root, { dryRun: false, adopt: false });
+    const r = await sync.check(root);
+    assert.equal(r.ok, true);
+  }));
 });
 
 // ---------------------------------------------------------------------------
-// 10. Edge cases / env translation
+// Symlink safety
 // ---------------------------------------------------------------------------
 
-describe("edge cases", () => {
-  it("handles a stdio server with no args", () => {
-    const server = { type: "stdio", command: "${HOME}/bin/tool", args: [] };
-    const result = sync.translateForOpenCode("x", server);
-    assert.deepEqual(result.command, ["{env:HOME}/bin/tool"]);
+describe("symlink safety", () => {
+  it("refuses to write opencode.json if it is a symlink", () => withRoot(async (root) => {
+    await wCanonical(root);
+    const target = join(root, "real.json");
+    await writeFile(target, "{}");
+    await symlink(target, join(root, "opencode.json"));
+    await assert.rejects(
+      sync.generate(root, { dryRun: false, adopt: false }),
+      /symlink.*opencode\.json|opencode\.json.*symlink/i
+    );
+  }));
+
+  it("refuses to write .mcp.json if it is a symlink", () => withRoot(async (root) => {
+    await wCanonical(root);
+    const target = join(root, "real2.json");
+    await writeFile(target, "{}");
+    await symlink(target, join(root, ".mcp.json"));
+    await assert.rejects(
+      sync.generate(root, { dryRun: false, adopt: false }),
+      /symlink.*\.mcp\.json|\.mcp\.json.*symlink/i
+    );
+  }));
+});
+
+// ---------------------------------------------------------------------------
+// JSON target structure guards
+// ---------------------------------------------------------------------------
+
+describe("target file structure guards", () => {
+  it("throws if opencode.json contains a JSON array at root", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await writeFile(join(root, "opencode.json"), "[]");
+    // readJsonFile returns the parsed value; generate merges using spread — array spread is wrong
+    // The generate function uses { ...existingOc } which silently ignores array indexes.
+    // We want this to fail. The corrected generate must validate the target root is an object.
+    // This test documents and enforces that contract.
+    await assert.rejects(
+      sync.generate(root, { dryRun: false, adopt: false }),
+      /plain object|invalid|array/i
+    );
+  }));
+
+  it("throws if .mcp.json mcpServers is an array", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await writeFile(join(root, ".mcp.json"), JSON.stringify({ mcpServers: [] }));
+    await assert.rejects(
+      sync.generate(root, { dryRun: false, adopt: false }),
+      /plain object|invalid|array/i
+    );
+  }));
+
+  it("throws if opencode.json mcp is an array", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await writeFile(join(root, "opencode.json"), JSON.stringify({ mcp: [] }));
+    await assert.rejects(
+      sync.generate(root, { dryRun: false, adopt: false }),
+      /plain object|invalid|array/i
+    );
+  }));
+
+  it("throws on malformed opencode.json", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await writeFile(join(root, "opencode.json"), "{ not json }");
+    await assert.rejects(
+      sync.generate(root, { dryRun: false, adopt: false }),
+      /invalid JSON/i
+    );
+  }));
+
+  it("throws on malformed .mcp.json", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await writeFile(join(root, ".mcp.json"), "{ not json }");
+    await assert.rejects(
+      sync.generate(root, { dryRun: false, adopt: false }),
+      /invalid JSON/i
+    );
+  }));
+});
+
+// ---------------------------------------------------------------------------
+// Generic ${VAR} interpolation
+// ---------------------------------------------------------------------------
+
+describe("generic variable interpolation", () => {
+  it("translates ${MYVAR} in command for OpenCode", () => {
+    const r = sync.translateForOpenCode("x", {
+      type: "stdio", command: "${MYVAR}/bin/x", args: [],
+    });
+    assert.equal(r.command[0], "{env:MYVAR}/bin/x");
   });
 
-  it("handles a stdio server with no env", () => {
-    const server = { type: "stdio", command: "/usr/bin/tool", args: ["a"] };
-    const result = sync.translateForOpenCode("x", server);
-    assert.ok(!("environment" in result));
+  it("translates multiple different ${VAR} in one arg", () => {
+    const r = sync.translateForOpenCode("x", {
+      type: "stdio", command: "/bin/x", args: ["${A}/${B}"],
+    });
+    assert.equal(r.command[1], "{env:A}/{env:B}");
   });
 
-  it("handles sse server in opencode — no command/args/env", () => {
-    const server = { type: "sse", url: "http://example.com/sse" };
-    const result = sync.translateForOpenCode("x", server);
-    assert.ok(!("command" in result));
-    assert.ok(!("args" in result));
-    assert.ok(!("environment" in result));
+  it("translates ${VAR} in env values for OpenCode", () => {
+    const r = sync.translateForOpenCode("x", {
+      type: "stdio", command: "/bin/x", args: [],
+      env: { COMBINED: "${PREFIX}:${SUFFIX}" },
+    });
+    assert.equal(r.environment.COMBINED, "{env:PREFIX}:{env:SUFFIX}");
   });
 
-  it("translates multiple ${HOME} occurrences in one arg value", () => {
-    const server = {
-      type: "stdio",
-      command: "${HOME}/bin/a",
-      args: ["${HOME}/b", "${HOME}/c"],
-    };
-    const result = sync.translateForOpenCode("x", server);
-    assert.equal(result.command[1], "{env:HOME}/b");
-    assert.equal(result.command[2], "{env:HOME}/c");
-  });
-
-  it("check returns ok:true when .mcp.json has no managed servers and canonical has none", async () => {
-    const root = await makeRoot();
-    try {
-      await writeFile(join(root, "mcp.servers.json"), JSON.stringify({ servers: {} }));
-      await sync.generate(root, { dryRun: false, adopt: false });
-      const result = await sync.check(root);
-      assert.equal(result.ok, true);
-    } finally {
-      await rm(root, { recursive: true });
-    }
-  });
-
-  it("generate creates opencode.json from scratch when absent", async () => {
-    const root = await makeRoot();
-    try {
-      await writeCanonical(root);
-      await sync.generate(root, { dryRun: false, adopt: false });
-      assert.ok(existsSync(join(root, "opencode.json")));
-    } finally {
-      await rm(root, { recursive: true });
-    }
-  });
-
-  it("generate creates .mcp.json from scratch when absent", async () => {
-    const root = await makeRoot();
-    try {
-      await writeCanonical(root);
-      await sync.generate(root, { dryRun: false, adopt: false });
-      assert.ok(existsSync(join(root, ".mcp.json")));
-    } finally {
-      await rm(root, { recursive: true });
-    }
+  it("preserves ${VAR} unchanged in Claude output", () => {
+    const r = sync.translateForClaude("x", {
+      type: "stdio", command: "${MYVAR}/bin/x", args: ["${A}"],
+      env: { K: "${V}" },
+    });
+    assert.equal(r.command, "${MYVAR}/bin/x");
+    assert.equal(r.args[0], "${A}");
+    assert.equal(r.env.K, "${V}");
   });
 });

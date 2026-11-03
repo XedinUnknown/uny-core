@@ -14,14 +14,14 @@ The `bin/sync-mcp.mjs` script reads this file and projects it into two client-sp
 
 | File | Client | Notes |
 |---|---|---|
-| `opencode.json` | OpenCode | Uses `{env:HOME}` syntax; `type: "local"` for stdio, `type: "remote"` for SSE |
-| `.mcp.json` | Claude / MCP clients | Uses `${HOME}` syntax; `command`/`args`/`env` for stdio, `url` for SSE |
+| `opencode.json` | OpenCode | `type:"local"` for stdio, `type:"remote"` for SSE; `${VAR}` → `{env:VAR}` |
+| `.mcp.json` | Claude / MCP clients | `type:"stdio"` for stdio, `type:"sse"` for SSE; `${VAR}` kept as-is |
 
 Both projection files are committed. `mcp.servers.json` owns the authoritative configuration for the `serena` and `jetbrains` servers.
 
 ## Canonical Format
 
-`mcp.servers.json` uses a portable format with `${HOME}` variable references (not expanded at generation time):
+`mcp.servers.json` uses a portable format with `${VAR}` variable references (not expanded at generation time):
 
 ```json
 {
@@ -48,18 +48,53 @@ Both projection files are committed. `mcp.servers.json` owns the authoritative c
 
 | Type | Required fields | Optional fields |
 |---|---|---|
-| `stdio` | `command` (string), `args` (array) | `env` (object) |
-| `sse` | `url` (string) | — |
+| `stdio` | `command` (string), `args` (string[]) | `env` (string values) |
+| `sse` | `url` (string) | `headers` (string values) |
+
+Unknown keys are rejected. Server names `__proto__`, `constructor`, and `prototype` are reserved.
 
 ### Variable references
 
-Use `${HOME}` in `command`, `args`, and `env` values. The projection tool translates this to the client-specific syntax at generation time without expanding the variable at that moment.
+Use `${VAR}` anywhere in `command`, `args`, `env` values, `url`, or `headers`. The projection tool translates `${VAR}` to `{env:VAR}` in OpenCode output and leaves it unchanged in Claude output. Variables are never expanded at generation time.
+
+`${VAR:-default}` syntax is not supported and is rejected at validation time.
+
+### Projection shapes
+
+**OpenCode (`opencode.json` `mcp` section):**
+
+```json
+"serena": {
+  "type": "local",
+  "command": ["{env:HOME}/.local/bin/uvx", "-p", "3.13", "..."],
+  "environment": { "BROWSER": "/bin/true" }
+},
+"jetbrains": {
+  "type": "remote",
+  "url": "http://127.0.0.1:64342/sse"
+}
+```
+
+**Claude (`.mcp.json` `mcpServers` section):**
+
+```json
+"serena": {
+  "type": "stdio",
+  "command": "${HOME}/.local/bin/uvx",
+  "args": ["-p", "3.13", "..."],
+  "env": { "BROWSER": "/bin/true" }
+},
+"jetbrains": {
+  "type": "sse",
+  "url": "http://127.0.0.1:64342/sse"
+}
+```
 
 ## Managed Servers
 
 The canonical file owns exactly the servers declared in `mcp.servers.json`. Currently managed:
 
-- **`serena`** — [Serena](https://github.com/oraios/serena) semantic code tools via stdio. Launched per-client on demand using `uvx`; no shared/background process. The full path `${HOME}/.local/bin/uvx` is used to avoid PATH manipulation.
+- **`serena`** — [Serena](https://github.com/oraios/serena) semantic code tools via stdio. Launched per-client on demand using `uvx`; no shared/background process. The full path `${HOME}/.local/bin/uvx` avoids PATH manipulation.
 - **`jetbrains`** — JetBrains IDE MCP gateway via SSE at `http://127.0.0.1:64342/sse`.
 
 All other entries in `opencode.json` and `.mcp.json` are unmanaged and are left untouched by sync-mcp.
@@ -69,7 +104,7 @@ All other entries in `opencode.json` and `.mcp.json` are unmanaged and are left 
 ### Usage
 
 ```bash
-# Generate projections from mcp.servers.json (idempotent)
+# Generate projections from mcp.servers.json (idempotent; no writes when unchanged)
 node bin/sync-mcp.mjs
 
 # Check for drift without writing
@@ -85,10 +120,16 @@ node bin/sync-mcp.mjs --root /path/to/project
 node bin/sync-mcp.mjs --adopt
 ```
 
+Run tooling tests:
+
+```bash
+node --test tests/mcp.test.mjs
+```
+
 Or via the package script:
 
 ```bash
-node --test tests/mcp.test.mjs   # run tooling tests
+pnpm run test:tooling
 ```
 
 ### Flags
@@ -98,45 +139,42 @@ node --test tests/mcp.test.mjs   # run tooling tests
 | `--check` | Validate projections match canonical. Exits 1 if any drift is detected. |
 | `--dry-run` | Print the projected content; do not write any files. |
 | `--root <dir>` | Project root directory (default: `process.cwd()`). |
-| `--adopt` | Adopt pre-existing entries with matching names on first-time migration. See [Initial Adoption](#initial-adoption). |
+| `--adopt` | Allow overwriting entries that were not created by sync-mcp, or that were externally modified since last sync. Required only on first-time migration or when accepting external edits. |
 
 ### No dependencies
 
-`bin/sync-mcp.mjs` uses only Node.js built-in modules (`node:fs/promises`, `node:path`, `node:process`). No `node_modules` installation is required to run it.
+`bin/sync-mcp.mjs` uses only Node.js built-in modules. No `node_modules` installation is required to run it.
 
 ## Ownership and the Manifest
 
-Ownership state is tracked in `.mcp.manifest.json`:
+Ownership state is tracked in `.mcp.manifest.json`. It records:
 
-```json
-{
-  "managed": ["jetbrains", "serena"]
-}
-```
+- **`managed`** — sorted list of server names owned by sync-mcp.
+- **`snapshots`** — the projected value last written for each managed entry, keyed as `oc:<name>` and `cl:<name>`.
 
-The manifest records which server names sync-mcp created. On subsequent runs:
+On each run:
 
-- Managed entries are freely updated to reflect the current canonical.
-- Entries not in the manifest are treated as unmanaged; sync-mcp will not overwrite them unless `--adopt` is given.
-- Managed entries that are removed from `mcp.servers.json` are removed from projections.
+- Managed entries are updated to reflect the current canonical.
+- An entry not in the manifest is left untouched unless `--adopt` is given.
+- A managed entry whose current value in a projection file differs from the stored snapshot is treated as externally modified; sync-mcp refuses to overwrite it without `--adopt`.
+- Managed entries removed from `mcp.servers.json` are removed from both projection files.
 - Unmanaged entries are never removed.
 
 `.mcp.manifest.json` is committed alongside the projection files.
 
 ## Idempotence
 
-Running `node bin/sync-mcp.mjs` multiple times produces the same output. Drift-free projections are detected and no unnecessary writes occur.
+Running `node bin/sync-mcp.mjs` multiple times produces identical output. Files are only written when their content would change.
 
 ## Initial Adoption
 
-When a project already has `serena` or `jetbrains` entries in `opencode.json` or `.mcp.json` that were not created by sync-mcp, the tool will refuse to overwrite them without explicit consent:
+When a project already has `serena` or `jetbrains` entries in `opencode.json` or `.mcp.json` that were not created by sync-mcp, the tool refuses to overwrite them without explicit consent:
 
 ```
-Error: opencode.json: entry "serena" exists and was not created by sync-mcp.
-Use --adopt to take ownership. (conflict)
+Error: opencode.json: "serena" exists and is not managed by sync-mcp; use --adopt
 ```
 
-Review the diff first:
+Review the projected changes first:
 
 ```bash
 node bin/sync-mcp.mjs --dry-run --adopt
@@ -148,22 +186,25 @@ Then adopt if the projected values are correct:
 node bin/sync-mcp.mjs --adopt
 ```
 
-After adoption, subsequent runs do not require `--adopt`.
+After adoption, subsequent runs require `--adopt` only if an entry is externally modified.
+
+## External-Edit Protection
+
+After initial generation, any edit to a managed entry directly in `opencode.json` or `.mcp.json` will be detected and rejected on the next run:
+
+```
+Error: opencode.json: "serena" was externally modified since last sync; use --adopt to overwrite
+```
+
+To accept the canonical value (discarding the external edit), run with `--adopt`. To keep the external value, update `mcp.servers.json` instead and re-run without `--adopt`.
 
 ## Drift Detection
-
-Run `--check` in CI or during setup to detect stale projections:
 
 ```bash
 node bin/sync-mcp.mjs --check
 ```
 
-Exit codes:
-
-| Code | Meaning |
-|---|---|
-| `0` | Projections are up to date |
-| `1` | Drift detected or error |
+Exit codes: `0` = up to date, `1` = drift or error.
 
 ## Symlink Safety
 
@@ -175,7 +216,7 @@ The tool refuses to write to `opencode.json` or `.mcp.json` if either is a symli
 
 1. Add the server entry to `mcp.servers.json`.
 2. Run `node bin/sync-mcp.mjs`.
-3. Review and commit the updated projections and manifest.
+3. Commit the updated projections and manifest.
 
 ### Changing an existing managed server
 
@@ -189,14 +230,6 @@ The tool refuses to write to `opencode.json` or `.mcp.json` if either is a symli
 2. Run `node bin/sync-mcp.mjs`. The entry is removed from both projections.
 3. Commit the changes.
 
-### Checking projections in CI
-
-```bash
-node bin/sync-mcp.mjs --check
-```
-
-This validates that projections match canonical without writing files.
-
 ## Relationship to mcp-compose.json
 
-`mcp-compose.json` remains available for non-Serena MCP gateways (JetBrains was previously configured there). Serena is intentionally not in `mcp-compose.json` because it creates persistent shared gateways; Serena must be a per-client on-demand stdio process. The canonical `mcp.servers.json` and its projections now own these configurations directly.
+`mcp-compose.json` remains available for non-Serena MCP gateways. Serena is intentionally not in `mcp-compose.json` because it creates persistent shared gateways; Serena must be a per-client on-demand stdio process. `mcp.servers.json` and its projections now own both managed server configurations directly.

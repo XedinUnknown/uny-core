@@ -2,5 +2,51 @@
   "managed": [
     "jetbrains",
     "serena"
-  ]
+  ],
+  "snapshots": {
+    "oc:serena": {
+      "type": "local",
+      "command": [
+        "{env:HOME}/.local/bin/uvx",
+        "-p",
+        "3.13",
+        "--from",
+        "git+https://github.com/oraios/serena",
+        "serena",
+        "start-mcp-server",
+        "--context=ide",
+        "--open-web-dashboard=false",
+        "--project-from-cwd"
+      ],
+      "environment": {
+        "BROWSER": "/bin/true"
+      }
+    },
+    "cl:serena": {
+      "type": "stdio",
+      "command": "${HOME}/.local/bin/uvx",
+      "args": [
+        "-p",
+        "3.13",
+        "--from",
+        "git+https://github.com/oraios/serena",
+        "serena",
+        "start-mcp-server",
+        "--context=ide",
+        "--open-web-dashboard=false",
+        "--project-from-cwd"
+      ],
+      "env": {
+        "BROWSER": "/bin/true"
+      }
+    },
+    "oc:jetbrains": {
+      "type": "remote",
+      "url": "http://127.0.0.1:64342/sse"
+    },
+    "cl:jetbrains": {
+      "type": "sse",
+      "url": "http://127.0.0.1:64342/sse"
+    }
+  }
 }

@@ -2,542 +2,299 @@
 /**
  * bin/sync-mcp.mjs — MCP projection generator
  *
- * Reads the canonical mcp.servers.json and projects it into:
- *   - opencode.json  (OpenCode — type:local/remote, {env:HOME} refs)
- *   - .mcp.json      (Claude — command/args/env, ${HOME} refs kept as-is)
+ * Reads canonical mcp.servers.json and projects it into:
+ *   opencode.json  — type:local/remote, {env:VAR} references
+ *   .mcp.json      — type:stdio/sse, ${VAR} references kept as-is
  *
- * A .mcp.manifest.json records which server names are managed by this tool.
+ * .mcp.manifest.json records managed names and per-target projected snapshots.
  * Only managed entries are touched; all other settings/servers are preserved.
  *
  * Usage:
  *   node bin/sync-mcp.mjs [--check] [--root <dir>] [--adopt] [--dry-run]
  *
- * Flags:
- *   --check      Validate projections match canonical; exit 1 if drifted
- *   --root <d>   Use <d> as the project root (default: process.cwd())
- *   --adopt      Allow initial adoption of pre-existing managed-name entries
- *   --dry-run    Print what would be written; do not write files
- *
  * No third-party dependencies.
  */
 
-import {
-  readFile,
-  writeFile,
-  lstat,
-  access,
-  constants,
-} from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { readFile, writeFile, lstat } from "node:fs/promises";
 import { join } from "node:path";
 import process from "node:process";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
 const CANONICAL_FILE = "mcp.servers.json";
-const OPENCODE_FILE = "opencode.json";
-const CLAUDE_FILE = ".mcp.json";
-const MANIFEST_FILE = ".mcp.manifest.json";
+const OPENCODE_FILE  = "opencode.json";
+const CLAUDE_FILE    = ".mcp.json";
+const MANIFEST_FILE  = ".mcp.manifest.json";
 
-// ---------------------------------------------------------------------------
+const RESERVED_NAMES = new Set(["__proto__", "constructor", "prototype"]);
+const STDIO_KEYS     = new Set(["type", "command", "args", "env"]);
+const SSE_KEYS       = new Set(["type", "url", "headers"]);
+
 // Validation helpers
-// ---------------------------------------------------------------------------
 
-/**
- * Validate a single server entry from the canonical file.
- * @param {string} name
- * @param {unknown} entry
- */
+function assertStr(val, label) {
+  if (typeof val !== "string") throw new Error(`${label} must be a string`);
+  if (/\$\{[^}]*:-[^}]*\}/.test(val))
+    throw new Error(`${label}: \${VAR:-default} syntax is not supported`);
+}
+
+function assertPlain(val, label) {
+  if (!val || typeof val !== "object" || Array.isArray(val))
+    throw new Error(`${label} must be a plain object`);
+}
+
+function assertStringMap(obj, label) {
+  assertPlain(obj, label);
+  for (const [k, v] of Object.entries(obj)) assertStr(v, `${label}.${k}`);
+}
+
 function validateServerEntry(name, entry) {
-  if (!entry || typeof entry !== "object") {
-    throw new Error(`Server "${name}": entry must be an object`);
-  }
-  const e = /** @type {Record<string, unknown>} */ (entry);
-  const type = e.type;
-  if (type !== "stdio" && type !== "sse") {
-    throw new Error(
-      `Server "${name}": unsupported type "${type}". Must be "stdio" or "sse"`
-    );
-  }
+  assertPlain(entry, `Server "${name}"`);
+  const { type } = entry;
+  if (type !== "stdio" && type !== "sse")
+    throw new Error(`Server "${name}": type must be "stdio" or "sse", got ${JSON.stringify(type)}`);
+  const allowed = type === "stdio" ? STDIO_KEYS : SSE_KEYS;
+  for (const k of Object.keys(entry))
+    if (!allowed.has(k)) throw new Error(`Server "${name}": unknown key "${k}" for type "${type}"`);
   if (type === "stdio") {
-    if (!e.command || typeof e.command !== "string") {
-      throw new Error(
-        `Server "${name}": stdio server must have a "command" string`
-      );
-    }
-    if (!Array.isArray(e.args)) {
-      throw new Error(
-        `Server "${name}": stdio server must have an "args" array`
-      );
-    }
-  }
-  if (type === "sse") {
-    if (!e.url || typeof e.url !== "string") {
-      throw new Error(`Server "${name}": sse server must have a "url" string`);
-    }
+    assertStr(entry.command, `Server "${name}".command`);
+    if (!Array.isArray(entry.args)) throw new Error(`Server "${name}".args must be an array`);
+    entry.args.forEach((a, i) => assertStr(a, `Server "${name}".args[${i}]`));
+    if (entry.env !== undefined) assertStringMap(entry.env, `Server "${name}".env`);
+  } else {
+    assertStr(entry.url, `Server "${name}".url`);
+    if (entry.headers !== undefined) assertStringMap(entry.headers, `Server "${name}".headers`);
   }
 }
 
-// ---------------------------------------------------------------------------
-// loadCanonical — parse and validate mcp.servers.json
-// ---------------------------------------------------------------------------
+// loadCanonical
 
-/**
- * @param {string} root
- * @returns {Promise<{servers: Record<string, object>}>}
- */
 export async function loadCanonical(root) {
   const path = join(root, CANONICAL_FILE);
   let raw;
-  try {
-    raw = await readFile(path, "utf8");
-  } catch (err) {
-    throw new Error(
-      `Cannot read mcp.servers.json at "${path}": ${err.message}`
-    );
+  try { raw = await readFile(path, "utf8"); }
+  catch (err) {
+    if (err.code === "ENOENT") throw new Error(`mcp.servers.json not found at "${path}"`);
+    throw err;
   }
-
   let parsed;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (err) {
-    throw new Error(`mcp.servers.json is not valid JSON: ${err.message}`);
-  }
-
-  if (!parsed || typeof parsed !== "object" || !parsed.servers) {
-    throw new Error(
-      `mcp.servers.json must have a "servers" object at the top level`
-    );
-  }
-
-  if (typeof parsed.servers !== "object" || Array.isArray(parsed.servers)) {
-    throw new Error(`mcp.servers.json "servers" must be a plain object`);
-  }
-
+  try { parsed = JSON.parse(raw); }
+  catch (err) { throw new Error(`mcp.servers.json: invalid JSON: ${err.message}`); }
+  assertPlain(parsed, "mcp.servers.json root");
+  assertPlain(parsed.servers, 'mcp.servers.json "servers"');
   for (const [name, entry] of Object.entries(parsed.servers)) {
+    if (RESERVED_NAMES.has(name)) throw new Error(`Server name "${name}" is reserved`);
     validateServerEntry(name, entry);
   }
-
   return parsed;
 }
 
-// ---------------------------------------------------------------------------
-// Translation helpers
-// ---------------------------------------------------------------------------
+// Translation
 
-/** Replace all ${HOME} occurrences with {env:HOME} (OpenCode syntax). */
-function toOpenCodeRef(str) {
-  return str.replaceAll("${HOME}", "{env:HOME}");
-}
+const toOC = (s) => s.replace(/\$\{([^}]+)\}/g, (_, v) => `{env:${v}}`);
+const mapStr = (obj, fn) => Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, fn(v)]));
+const nonempty = (obj) => obj && Object.keys(obj).length > 0;
 
-/**
- * Translate a canonical server entry to OpenCode format.
- *
- * stdio → type:local, command:[translated-cmd, ...args], environment:{...}
- * sse   → type:remote, url
- *
- * @param {string} name
- * @param {object} server
- * @returns {object}
- */
-export function translateForOpenCode(name, server) {
-  const s = /** @type {Record<string, any>} */ (server);
-
-  if (s.type === "stdio") {
-    const cmd = toOpenCodeRef(s.command);
-    const args = (s.args ?? []).map((a) => toOpenCodeRef(String(a)));
-    const result = {
-      type: "local",
-      command: [cmd, ...args],
-    };
-    if (s.env && Object.keys(s.env).length > 0) {
-      result.environment = Object.fromEntries(
-        Object.entries(s.env).map(([k, v]) => [k, toOpenCodeRef(String(v))])
-      );
-    }
+export function translateForOpenCode(_name, server) {
+  if (server.type === "stdio") {
+    const result = { type: "local", command: [toOC(server.command), ...(server.args ?? []).map(toOC)] };
+    if (nonempty(server.env)) result.environment = mapStr(server.env, toOC);
+    if (nonempty(server.headers)) result.headers = { ...server.headers };
     return result;
   }
-
-  if (s.type === "sse") {
-    return { type: "remote", url: s.url };
-  }
-
-  throw new Error(`translateForOpenCode: unknown type "${s.type}" for "${name}"`);
+  const result = { type: "remote", url: server.url };
+  if (nonempty(server.headers)) result.headers = { ...server.headers };
+  return result;
 }
 
-/**
- * Translate a canonical server entry to Claude .mcp.json format.
- *
- * stdio → {command, args, [env]}  (no "type" key; ${HOME} kept as-is)
- * sse   → {url}                   (no "type" key)
- *
- * @param {string} name
- * @param {object} server
- * @returns {object}
- */
-export function translateForClaude(name, server) {
-  const s = /** @type {Record<string, any>} */ (server);
-
-  if (s.type === "stdio") {
-    const result = {
-      command: s.command,
-      args: s.args ?? [],
-    };
-    if (s.env && Object.keys(s.env).length > 0) {
-      result.env = { ...s.env };
-    }
+export function translateForClaude(_name, server) {
+  if (server.type === "stdio") {
+    const result = { type: "stdio", command: server.command, args: server.args ?? [] };
+    if (nonempty(server.env)) result.env = { ...server.env };
+    if (nonempty(server.headers)) result.headers = { ...server.headers };
     return result;
   }
-
-  if (s.type === "sse") {
-    return { url: s.url };
-  }
-
-  throw new Error(`translateForClaude: unknown type "${s.type}" for "${name}"`);
+  const result = { type: "sse", url: server.url };
+  if (nonempty(server.headers)) result.headers = { ...server.headers };
+  return result;
 }
 
-// ---------------------------------------------------------------------------
-// File I/O helpers
-// ---------------------------------------------------------------------------
+// I/O helpers
 
-/** @param {string} path */
-async function readJsonFile(path) {
-  const raw = await readFile(path, "utf8");
-  return JSON.parse(raw);
+async function readJSON(path) {
+  let raw;
+  try { raw = await readFile(path, "utf8"); }
+  catch (err) { if (err.code === "ENOENT") return null; throw err; }
+  try { return JSON.parse(raw); }
+  catch (err) { throw new Error(`${path}: invalid JSON: ${err.message}`); }
 }
 
-/** @param {string} path */
-async function readJsonFileOrNull(path) {
-  try {
-    return await readJsonFile(path);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Guard: refuse to operate on a symlink.
- * @param {string} path
- * @param {string} label
- */
 async function assertNotSymlink(path, label) {
   try {
-    const stat = await lstat(path);
-    if (stat.isSymbolicLink()) {
-      throw new Error(
-        `Refusing to write ${label}: "${path}" is a symlink. ` +
-          `Remove or replace it with a regular file first.`
-      );
-    }
-  } catch (err) {
-    // File does not exist — that is fine
-    if (err.code === "ENOENT") return;
-    throw err;
-  }
+    if ((await lstat(path)).isSymbolicLink())
+      throw new Error(`Refusing to write ${label}: "${path}" is a symlink`);
+  } catch (err) { if (err.code !== "ENOENT") throw err; }
 }
 
-// ---------------------------------------------------------------------------
-// Manifest — tracks which server names are managed by sync-mcp
-// ---------------------------------------------------------------------------
+function assertTargetShape(obj, file, mcp_key) {
+  assertPlain(obj, `${file} root`);
+  if (obj[mcp_key] !== undefined) assertPlain(obj[mcp_key], `${file} "${mcp_key}"`);
+}
 
-/** @param {string} root */
+// Manifest
+
 async function loadManifest(root) {
-  const path = join(root, MANIFEST_FILE);
-  const data = await readJsonFileOrNull(path);
-  if (!data || !Array.isArray(data.managed)) {
-    return { managed: [] };
-  }
-  return data;
+  let raw;
+  try { raw = await readFile(join(root, MANIFEST_FILE), "utf8"); }
+  catch (err) { if (err.code === "ENOENT") return { managed: [], snapshots: {} }; throw err; }
+  let data;
+  try { data = JSON.parse(raw); }
+  catch (err) { throw new Error(`${MANIFEST_FILE}: invalid JSON: ${err.message}`); }
+  if (!Array.isArray(data?.managed)) throw new Error(`${MANIFEST_FILE}: "managed" must be an array`);
+  return { managed: data.managed, snapshots: data.snapshots ?? {} };
 }
 
-/**
- * @param {string} root
- * @param {string[]} managed
- */
-async function writeManifest(root, managed) {
-  const path = join(root, MANIFEST_FILE);
-  const content = { managed: [...managed].sort() };
-  await writeFile(path, JSON.stringify(content, null, 2) + "\n");
+async function writeManifest(root, managed, snapshots) {
+  await writeFile(join(root, MANIFEST_FILE), JSON.stringify({ managed: [...managed].sort(), snapshots }, null, 2) + "\n");
 }
 
-// ---------------------------------------------------------------------------
-// Conflict detection
-// ---------------------------------------------------------------------------
+// Conflict detection (snapshot-based)
 
-/**
- * Check for conflicting entries in a target object.
- *
- * A conflict occurs when a canonical name exists in the target but is not
- * in the manifest (previously managed) and the current value does not match
- * the expected projected value.
- *
- * @param {Record<string, unknown>} target  existing mcp entries from file
- * @param {Record<string, unknown>} projected  what we would write
- * @param {string[]} managed  previously managed names
- * @param {boolean} adopt  if true, override conflicts
- * @param {string} targetLabel  label for error messages
- * @returns {string[]} list of conflict descriptions
- */
-function detectConflicts(target, projected, managed, adopt, targetLabel) {
+function detectConflicts(current, projected, snapshots, adopt, label) {
   if (adopt) return [];
-  const conflicts = [];
-  for (const name of Object.keys(projected)) {
-    if (!(name in target)) continue; // no existing entry — no conflict
-    if (managed.includes(name)) continue; // we manage it — safe to update
-    // Exists, not managed: compare current vs projected
-    const current = JSON.stringify(target[name]);
-    const expected = JSON.stringify(projected[name]);
-    if (current !== expected) {
-      conflicts.push(
-        `${targetLabel}: entry "${name}" exists and was not created by sync-mcp. ` +
-          `Use --adopt to take ownership. (conflict)`
-      );
+  return Object.keys(projected).flatMap((name) => {
+    if (!(name in current)) return [];
+    const snap = snapshots[name];
+    const cur = JSON.stringify(current[name]);
+    if (snap === undefined) {
+      return cur !== JSON.stringify(projected[name])
+        ? [`${label}: "${name}" exists and is not managed by sync-mcp; use --adopt`]
+        : [];
     }
-  }
-  return conflicts;
+    return cur !== JSON.stringify(snap)
+      ? [`${label}: "${name}" was externally modified since last sync; use --adopt to overwrite`]
+      : [];
+  });
 }
 
-// ---------------------------------------------------------------------------
-// generate — core projection logic
-// ---------------------------------------------------------------------------
+// generate
 
-/**
- * @typedef {object} GenerateOptions
- * @property {boolean} [dryRun]
- * @property {boolean} [adopt]
- */
-
-/**
- * Generate projections from canonical mcp.servers.json.
- *
- * @param {string} root
- * @param {GenerateOptions} [opts]
- * @returns {Promise<{opencode: object, claude: object} | undefined>}
- */
 export async function generate(root, opts = {}) {
   const dryRun = opts.dryRun ?? false;
-  const adopt = opts.adopt ?? false;
+  const adopt  = opts.adopt  ?? false;
 
-  // 1. Load canonical
-  const canonical = await loadCanonical(root);
-  const servers = canonical.servers;
+  const { servers } = await loadCanonical(root);
+  const { managed: prevManaged, snapshots } = await loadManifest(root);
 
-  // 2. Load manifest (previously managed names)
-  const manifest = await loadManifest(root);
-  const previouslyManaged = manifest.managed;
-
-  // 3. Translate all entries
-  const ocProjected = {}; // opencode projections
-  const clProjected = {}; // claude projections
-  for (const [name, server] of Object.entries(servers)) {
-    ocProjected[name] = translateForOpenCode(name, server);
-    clProjected[name] = translateForClaude(name, server);
+  const ocProjected = {};
+  const clProjected = {};
+  for (const [n, s] of Object.entries(servers)) {
+    ocProjected[n] = translateForOpenCode(n, s);
+    clProjected[n] = translateForClaude(n, s);
   }
 
-  // 4. Load existing files
   const ocPath = join(root, OPENCODE_FILE);
   const clPath = join(root, CLAUDE_FILE);
 
-  // Symlink guards (before reading, before conflict detection)
   if (!dryRun) {
     await assertNotSymlink(ocPath, OPENCODE_FILE);
     await assertNotSymlink(clPath, CLAUDE_FILE);
   }
 
-  const existingOc = (await readJsonFileOrNull(ocPath)) ?? {};
-  const existingCl = (await readJsonFileOrNull(clPath)) ?? {};
+  const existingOc = (await readJSON(ocPath)) ?? {};
+  const existingCl = (await readJSON(clPath)) ?? {};
+  assertTargetShape(existingOc, OPENCODE_FILE, "mcp");
+  assertTargetShape(existingCl, CLAUDE_FILE, "mcpServers");
 
-  const existingOcMcp = existingOc.mcp ?? {};
-  const existingClMcp = existingCl.mcpServers ?? {};
+  const ocSnaps = Object.fromEntries(Object.entries(snapshots).filter(([k]) => k.startsWith("oc:")).map(([k, v]) => [k.slice(3), v]));
+  const clSnaps = Object.fromEntries(Object.entries(snapshots).filter(([k]) => k.startsWith("cl:")).map(([k, v]) => [k.slice(3), v]));
 
-  // 5. Conflict detection
-  const ocConflicts = detectConflicts(
-    existingOcMcp,
-    ocProjected,
-    previouslyManaged,
-    adopt,
-    OPENCODE_FILE
-  );
-  const clConflicts = detectConflicts(
-    existingClMcp,
-    clProjected,
-    previouslyManaged,
-    adopt,
-    CLAUDE_FILE
-  );
-  const allConflicts = [...ocConflicts, ...clConflicts];
-  if (allConflicts.length > 0) {
-    throw new Error(allConflicts.join("\n"));
-  }
+  const conflicts = [
+    ...detectConflicts(existingOc.mcp ?? {}, ocProjected, ocSnaps, adopt, OPENCODE_FILE),
+    ...detectConflicts(existingCl.mcpServers ?? {}, clProjected, clSnaps, adopt, CLAUDE_FILE),
+  ];
+  if (conflicts.length > 0) throw new Error(conflicts.join("\n"));
 
-  // 6. Build new mcp sections
-  //    - Start from existing, preserving unrelated entries
-  //    - Remove previously managed entries that are no longer in canonical
-  //    - Apply new projections
-
-  const newOcMcp = { ...existingOcMcp };
-  const newClMcp = { ...existingClMcp };
-
-  // Remove stale managed entries (previously managed, now absent from canonical)
-  for (const name of previouslyManaged) {
-    if (!(name in servers)) {
-      delete newOcMcp[name];
-      delete newClMcp[name];
-    }
-  }
-
-  // Apply projections
+  const newOcMcp = { ...existingOc.mcp };
+  const newClMcp = { ...existingCl.mcpServers };
+  for (const n of prevManaged) { if (!(n in servers)) { delete newOcMcp[n]; delete newClMcp[n]; } }
   Object.assign(newOcMcp, ocProjected);
   Object.assign(newClMcp, clProjected);
 
-  // 7. Build final file objects
   const newOc = { ...existingOc, mcp: newOcMcp };
   const newCl = { ...existingCl, mcpServers: newClMcp };
 
-  // 8. Dry-run: return without writing
-  if (dryRun) {
-    return { opencode: newOc, claude: newCl };
-  }
+  if (dryRun) return { opencode: newOc, claude: newCl };
 
-  // 9. Write files
-  await writeFile(ocPath, JSON.stringify(newOc, null, 2) + "\n");
-  await writeFile(clPath, JSON.stringify(newCl, null, 2) + "\n");
+  const ocStr = JSON.stringify(newOc, null, 2) + "\n";
+  const clStr = JSON.stringify(newCl, null, 2) + "\n";
+  let curOc, curCl;
+  try { curOc = await readFile(ocPath, "utf8"); } catch { /**/ }
+  try { curCl = await readFile(clPath, "utf8"); } catch { /**/ }
+  if (ocStr !== curOc) await writeFile(ocPath, ocStr);
+  if (clStr !== curCl) await writeFile(clPath, clStr);
 
-  // 10. Update manifest
-  await writeManifest(root, Object.keys(servers));
+  const newSnaps = {};
+  for (const n of Object.keys(servers)) { newSnaps[`oc:${n}`] = ocProjected[n]; newSnaps[`cl:${n}`] = clProjected[n]; }
+  await writeManifest(root, Object.keys(servers), newSnaps);
 
   return { opencode: newOc, claude: newCl };
 }
 
-// ---------------------------------------------------------------------------
-// check — detect drift between canonical and projections
-// ---------------------------------------------------------------------------
+// check
 
-/**
- * @param {string} root
- * @returns {Promise<{ok: boolean, drifted: string[]}>}
- */
 export async function check(root) {
-  const drifted = [];
-
-  // Generate what we expect (dry run)
   let expected;
-  try {
-    expected = await generate(root, { dryRun: true, adopt: false });
-  } catch (err) {
-    // If generation itself fails (e.g. canonical missing), report as drift
-    drifted.push(`Cannot generate expected projections: ${err.message}`);
-    return { ok: false, drifted };
+  try { expected = await generate(root, { dryRun: true, adopt: false }); }
+  catch (err) { return { ok: false, drifted: [`Cannot compute expected state: ${err.message}`] }; }
+
+  const drifted = [];
+  for (const [file, path, mcp_key] of [
+    [OPENCODE_FILE, join(root, OPENCODE_FILE), "mcp"],
+    [CLAUDE_FILE,   join(root, CLAUDE_FILE),   "mcpServers"],
+  ]) {
+    const actual = await readJSON(path);
+    if (!actual) { drifted.push(`${file} is missing`); continue; }
+    const exp = (file === OPENCODE_FILE ? expected.opencode.mcp : expected.claude.mcpServers) ?? {};
+    const act = actual[mcp_key] ?? {};
+    for (const n of Object.keys(exp))
+      if (JSON.stringify(act[n]) !== JSON.stringify(exp[n]))
+        drifted.push(`${file}: "${n}" has drifted`);
   }
-
-  if (!expected) {
-    drifted.push("generate() returned nothing in dry-run mode");
-    return { ok: false, drifted };
-  }
-
-  const ocPath = join(root, OPENCODE_FILE);
-  const clPath = join(root, CLAUDE_FILE);
-
-  // Check opencode.json
-  const existingOc = await readJsonFileOrNull(ocPath);
-  if (!existingOc) {
-    drifted.push(`${OPENCODE_FILE} is missing`);
-  } else {
-    const expectedOcMcp = expected.opencode.mcp ?? {};
-    const actualOcMcp = existingOc.mcp ?? {};
-    for (const name of Object.keys(expectedOcMcp)) {
-      if (JSON.stringify(actualOcMcp[name]) !== JSON.stringify(expectedOcMcp[name])) {
-        drifted.push(`${OPENCODE_FILE}: entry "${name}" has drifted`);
-      }
-    }
-  }
-
-  // Check .mcp.json
-  const existingCl = await readJsonFileOrNull(clPath);
-  if (!existingCl) {
-    drifted.push(`${CLAUDE_FILE} is missing`);
-  } else {
-    const expectedClMcp = expected.claude.mcpServers ?? {};
-    const actualClMcp = existingCl.mcpServers ?? {};
-    for (const name of Object.keys(expectedClMcp)) {
-      if (JSON.stringify(actualClMcp[name]) !== JSON.stringify(expectedClMcp[name])) {
-        drifted.push(`${CLAUDE_FILE}: entry "${name}" has drifted`);
-      }
-    }
-  }
-
   return { ok: drifted.length === 0, drifted };
 }
 
-// ---------------------------------------------------------------------------
-// CLI entrypoint (when run directly)
-// ---------------------------------------------------------------------------
+// CLI
 
-// ESM main-module detection
-const mainUrl = import.meta.url;
-// process.argv[1] may be a relative or absolute path; normalise to file URL
 let argvUrl = "";
 try {
-  if (process.argv[1]) {
-    argvUrl = new URL(
-      process.argv[1].startsWith("/")
-        ? `file://${process.argv[1]}`
-        : process.argv[1]
-    ).href;
-  }
-} catch {
-  argvUrl = "";
-}
+  if (process.argv[1])
+    argvUrl = new URL(process.argv[1].startsWith("/") ? `file://${process.argv[1]}` : process.argv[1]).href;
+} catch { /**/ }
 
-if (mainUrl === argvUrl || process.argv[1]?.endsWith("sync-mcp.mjs")) {
-  const args = process.argv.slice(2);
+if (import.meta.url === argvUrl || process.argv[1]?.endsWith("sync-mcp.mjs")) {
+  const args   = process.argv.slice(2);
   const doCheck = args.includes("--check");
-  const dryRun = args.includes("--dry-run");
-  const adopt = args.includes("--adopt");
-  const rootIdx = args.indexOf("--root");
-  const root =
-    rootIdx !== -1 && args[rootIdx + 1]
-      ? args[rootIdx + 1]
-      : process.cwd();
+  const dryRun  = args.includes("--dry-run");
+  const adopt   = args.includes("--adopt");
+  const ri      = args.indexOf("--root");
+  const root    = ri !== -1 && args[ri + 1] ? args[ri + 1] : process.cwd();
 
-  if (doCheck) {
-    check(root)
-      .then(({ ok, drifted }) => {
-        if (ok) {
-          console.log("ok — projections are up to date");
-          process.exit(0);
-        } else {
-          console.error("DRIFT detected:");
-          for (const d of drifted) console.error(`  - ${d}`);
-          process.exit(1);
-        }
+  const run = doCheck
+    ? check(root).then(({ ok, drifted }) => {
+        if (ok) { console.log("ok — projections are up to date"); return; }
+        console.error("DRIFT detected:");
+        for (const d of drifted) console.error(`  - ${d}`);
+        process.exitCode = 1;
       })
-      .catch((err) => {
-        console.error("Error:", err.message);
-        process.exit(1);
-      });
-  } else {
-    generate(root, { dryRun, adopt })
-      .then((result) => {
+    : generate(root, { dryRun, adopt }).then((result) => {
         if (dryRun && result) {
-          console.log("Dry-run — would write:");
-          console.log("\nopencode.json:");
+          console.log("Dry-run — would write:\n\nopencode.json:");
           console.log(JSON.stringify(result.opencode, null, 2));
           console.log("\n.mcp.json:");
           console.log(JSON.stringify(result.claude, null, 2));
         } else if (!dryRun) {
-          console.log("Generated projections:");
-          console.log(`  ${OPENCODE_FILE}`);
-          console.log(`  ${CLAUDE_FILE}`);
-          console.log(`  ${MANIFEST_FILE}`);
+          console.log(`Generated: ${OPENCODE_FILE}  ${CLAUDE_FILE}  ${MANIFEST_FILE}`);
         }
-        process.exit(0);
-      })
-      .catch((err) => {
-        console.error("Error:", err.message);
-        process.exit(1);
       });
-  }
+
+  run.catch((err) => { console.error("Error:", err.message); process.exitCode = 1; });
 }
