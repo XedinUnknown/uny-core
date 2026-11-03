@@ -6,7 +6,6 @@ context: |
   package design documents, and memories do not establish implemented behavior.
   Propose future behavior explicitly as changes rather than silently expanding
   the baseline. See openspec/README.md for baseline scope and provenance.
-
-design:
-  architecture: openspec/design/architecture.md
-  implementation-plan: openspec/design/implementation-plan.md
+  Intended architecture lives in openspec/design/architecture.md; delivery order,
+  acceptance criteria, and open decisions live in openspec/design/implementation-plan.md.
+  These supplementary design documents do not establish implemented behavior.
