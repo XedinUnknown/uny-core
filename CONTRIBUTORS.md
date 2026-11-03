@@ -67,7 +67,7 @@ OpenCode is configured in `opencode.json`. Restart OpenCode after changing that 
 $HOME/.local/bin/uvx -p 3.13 --from git+https://github.com/oraios/serena serena start-mcp-server --context=ide --open-web-dashboard=false --project-from-cwd
 ```
 
-There is no `serena` Docker Compose service in this project and no shared/background Serena server. A shared server risks stale or cross-session state (a different client can silently switch its active project or write to a location this project doesn't control). The `.mcp.json` projection committed in this repository provides the Serena entry for Claude and other MCP clients.
+There is no `serena` Docker Compose service in this project and no shared/background Serena server. A shared server risks stale or cross-session state (a different client can silently switch its active project or write to a location this project doesn't control). The `.mcp.json` projection committed in this repository provides the Serena entry for Claude.
 
 ## AI Tooling
 
