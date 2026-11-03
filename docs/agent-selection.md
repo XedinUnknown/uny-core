@@ -20,13 +20,13 @@ The filename stem becomes the agent name in OpenCode.
 
 The `name` frontmatter field — not the filename — is the canonical identity. Files without `name` or `description` are silently skipped.
 
-This project's shared definitions live in `.agents/agents/` and are copied into harness directories by `agents-config` (`opencode-interop` → `.opencode/agents/`, `claude-interop` → `.claude/agents/`).
+This project's shared definitions live in `.agents/agents/` and are linked into harness directories by `agents-config` (`opencode-interop` to `.opencode/agents/`, `claude-interop` to `.claude/agents/`).
 
 ## Default Agent
 
 **OpenCode:** the `default_agent` top-level key in `opencode.json` selects the primary agent when no session agent is chosen. Config files are merged across sources (global then project); the project value overrides the global value for this key. If `default_agent` is absent from all config sources, OpenCode falls back to `build` with a warning when the specified agent is missing or a subagent. This project does not set `default_agent`; the effective default is inherited from the global config if set there, otherwise OpenCode uses `build`.
 
-**Claude Code:** no equivalent config key. The session agent is set via `--agent <name>` or interactively. User global defaults in `~/.claude/settings.json` do not override a project-level setting in `.claude/settings.local.json`.
+**Claude Code:** set `"agent": "build"` in `~/.claude/settings.json` to select the shared `build` definition globally, or use `--agent <name>` for one session. Project settings can override user settings, but this project deliberately does not select an agent.
 
 ## Per-Agent Model Policy
 
@@ -40,7 +40,7 @@ This project's shared definitions live in `.agents/agents/` and are copied into 
 
 **Claude Code `permissionMode: plan`** is a frontmatter field recognized by Claude Code that puts any agent into a harness-enforced read-only mode. It is a capability flag, not an agent name. OpenCode does not recognize this field and ignores it safely.
 
-A project agent file with `name: plan` defines a separate agent that coexists with each harness's own built-in Plan concept. The two are distinct: the shared `plan.md` file here is a named agent definition; `permissionMode: plan` is a Claude Code read-only flag carried inside it for that harness.
+In OpenCode, the project `plan.md` customizes the existing `plan` identity. In Claude Code, the lowercase custom name `plan` is distinct from the built-in `Plan` research subagent. `permissionMode: plan` is a permission mode, not agent selection.
 
 ## What This Project Omits
 
@@ -58,10 +58,4 @@ A project agent file with `name: plan` defines a separate agent that coexists wi
 opencode agent list   # lists loaded agents and their effective permissions
 ```
 
-**Claude Code:**
-
-```sh
-claude agents --json  # lists active background sessions; does not enumerate loaded agent files
-```
-
-To confirm which Claude Code agent files were loaded, inspect `.claude/agents/` and `~/.claude/agents/` directly.
+**Claude Code:** inspect the generated `.claude/agents/` links and confirm the selected definition in an interactive session. Static file checks do not establish runtime model precedence or permission enforcement.
