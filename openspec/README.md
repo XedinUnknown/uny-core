@@ -2,6 +2,12 @@
 
 This directory contains the capability specs and validation configuration for the `uny` project.
 
+## Design
+
+[`design/`](design/) holds supplementary project planning documents: the normative architecture and the
+delivery implementation plan. These are project conventions, not OpenSpec-validated artifacts, and do not
+expand the OpenSpec baseline. No planned or future runtime behavior is claimed as implemented here.
+
 ## Specs
 
 - [DI composition](specs/di-composition/spec.md): providers, definition helpers, and provenance.

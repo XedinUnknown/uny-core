@@ -4,14 +4,15 @@ Read `README.md` first. It is the shared source for project status and human-fac
 
 Agent-only notes:
 
-- Read `.opencode/plans/architecture.md` and `.opencode/plans/implementation-plan.md` before creating or changing project files; they are the design and delivery sources of truth until implementation supersedes planned behavior.
+- Read `openspec/design/architecture.md` and `openspec/design/implementation-plan.md` before creating or changing project files; they are the design and delivery sources of truth until implementation supersedes planned behavior.
 - Treat the instruction runner, persistent hosts, sessions, and device adapters as not started. DI/core and the initial CLI/config/inspect foundation already exist.
 - Use the documented Docker Compose setup commands only; do not infer missing test, lint, or runner commands.
 - Keep documentation and scaffolding changes minimal unless explicitly requested.
 - Do not start implementation phases from the plan unless explicitly asked.
 - When implementation does begin, preserve the plan's test-first requirement and config-based modularity constraints.
 - Use the `Dhii/containers` `0.3.x` config-based modularity skill as the canonical source when available.
-- Restart OpenCode after changes to `opencode.json`, `.agents/`, or `.opencode/` files.
+- Restart OpenCode after changes to `opencode.json`, `.agents/`, or `openspec/` files.
+- Claude Code 2.1.277 and later reads `AGENTS.md` natively; `CLAUDE.md` in this project is a backward-compatibility wrapper for older versions only. Do not add a redundant `CLAUDE.md` import of `AGENTS.md` if the native file is already read.
 - Serena MCP is launched directly by each client on demand over stdio via `uvx`. There is no Docker Compose `serena` service and no shared/background server; do not add one back — a shared server can be silently mutated (active project, memory writes) by an unrelated client or session.
 - Serena MCP calls should go through the MCP tool interface, not the `serena` CLI, so results reflect the actual connected server rather than a separately-invoked process that may target a different data directory.
 - `mcp-compose.json` does not manage Serena because it creates persistent shared gateways. Do not use it as a Serena configuration source.

@@ -90,9 +90,10 @@ again to refresh them. Restart OpenCode after setup installs or refreshes integr
 
 Phase 0 AI tooling configuration is included for agent-driven implementation:
 
-- `agents.yaml` declares the config-based modularity skill dependency and the project's [agents-config](https://github.com/XedinUnknown/agents-config) installation settings. Skills are copied into `.agents/skills`, which OpenCode reads directly.
+- `agents.yaml` declares skill dependencies and [agents-config](https://github.com/XedinUnknown/agents-config) installation settings. Skills are copied into `.agents/skills`, which OpenCode reads directly; `claude-interop` symlinks them into `.claude/skills` so Claude Code sees them too.
 - `agents-lock.json` pins skill sources; generated skill copies are ignored by Git.
 - `opencode.json` configures OpenCode permissions, `plan`, `build`, and `code` agents, and the Serena MCP server.
+- `AGENTS.md` is the primary AI instruction file. Claude Code 2.1.277 and later reads it natively. `CLAUDE.md` is a backward-compatibility wrapper for older Claude Code versions.
 - `.agents/` contains agentloom canonical agent definitions.
 - `mcp-compose.json` remains available for non-Serena MCP gateways.
 
