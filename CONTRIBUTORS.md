@@ -73,10 +73,10 @@ There is no `serena` Docker Compose service in this project. `mcp-compose` is no
 
 Phase 0 AI tooling configuration is included for agent-driven implementation:
 
-- `agents.yaml` declares the config-based modularity skill dependency and the project's [agents-config](https://github.com/XedinUnknown/agents-config) installation settings. Skills are copied into `.agents/skills`, which OpenCode reads directly.
-- `agents-lock.json` pins skill sources; generated skill copies are ignored by Git.
-- `opencode.json` configures OpenCode permissions, `plan`, `build`, and `code` agents, and the Serena MCP server.
-- `.agents/` contains agentloom canonical agent definitions.
+- `agents.yaml` declares the config-based modularity skill dependency and the project's [agents-config](https://github.com/XedinUnknown/agents-config) installation settings. Skills are copied into `.agents/skills`, which OpenCode and Codex read directly. The `claude-interop` and `opencode-interop` targets link each skill from the shared `.agents/` directory into the per-harness locations Claude Code and OpenCode expect.
+- `agents-lock.json` pins skill and agent sources; generated copies are ignored by Git.
+- `.agents/agents/` contains hand-written canonical agent definitions in a portable frontmatter format. agents-config distributes them to each harness through the configured targets.
+- `opencode.json` configures OpenCode permissions and Serena MCP. It also declares a `plan` agent permission guard (edit denied). Model selection and the `build` and `code` agent definitions are provided by each client's own configuration, not this file.
 - `mcp-compose.json` remains available for non-Serena MCP gateways.
 
 Install configured agent dependencies from the dev container:
@@ -85,4 +85,24 @@ Install configured agent dependencies from the dev container:
 docker compose run --rm dev pnpm exec agents-config install
 ```
 
-The tool is installed directly from the upstream `0.1.x` Git branch, with its resolved commit pinned in `pnpm-lock.yaml`. Use `agents-config update` instead of `install` after changing skill dependency declarations or to refresh their locked revisions. Restart OpenCode after installing or updating skills.
+Or directly where `pnpm` and Node.js are available:
+
+```bash
+pnpm exec agents-config install
+```
+
+The tool is declared as a dev dependency from the upstream `0.1.x` Git branch, with its resolved commit pinned in `pnpm-lock.yaml`. Use `agents-config update` instead of `install` after changing skill dependency declarations or to refresh their locked revisions. Restart OpenCode after installing or updating agent integrations.
+
+## Agent Wiring Tests
+
+`tests/agents.test.js` validates that agent definitions and config wiring are consistent. Run it directly with Node.js (no build step required):
+
+```bash
+node --test tests/agents.test.js
+```
+
+Or from the dev container:
+
+```bash
+docker compose run --rm dev node --test tests/agents.test.js
+```
