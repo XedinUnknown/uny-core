@@ -45,6 +45,7 @@ build: dependencies
 
 .PHONY: test
 test: dependencies
+	pnpm test:tooling
 	pnpm test
 
 .PHONY: dev

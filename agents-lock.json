@@ -22,7 +22,84 @@
             "method": "copy",
             "contentHash": "b4b2ac4990648761fb5e92390088546ab2ffa64b77a532a447b1f0c78ffd267f",
             "installedAt": "2026-11-02T16:50:30.942Z",
-            "updatedAt": "2026-11-02T16:50:30.942Z"
+            "updatedAt": "2026-11-03T23:24:53.408Z"
+          }
+        }
+      }
+    },
+    "claude-interop": {
+      "handler": "claude-interop",
+      "state": {
+        "managedIgnoreDirs": [
+          ".claude/agents",
+          ".claude/skills"
+        ],
+        "installs": {
+          ".claude/skills/config-based-modularity": {
+            "kind": "skills",
+            "name": "config-based-modularity",
+            "method": "link",
+            "contentHash": "",
+            "installedAt": "2026-11-03T23:24:53.413Z",
+            "updatedAt": "2026-11-03T23:24:53.413Z"
+          },
+          ".claude/agents/build.md": {
+            "kind": "agents",
+            "name": "build",
+            "method": "link",
+            "contentHash": "",
+            "installedAt": "2026-11-03T23:24:53.413Z",
+            "updatedAt": "2026-11-03T23:24:53.413Z"
+          },
+          ".claude/agents/code.md": {
+            "kind": "agents",
+            "name": "code",
+            "method": "link",
+            "contentHash": "",
+            "installedAt": "2026-11-03T23:24:53.414Z",
+            "updatedAt": "2026-11-03T23:24:53.414Z"
+          },
+          ".claude/agents/plan.md": {
+            "kind": "agents",
+            "name": "plan",
+            "method": "link",
+            "contentHash": "",
+            "installedAt": "2026-11-03T23:24:53.414Z",
+            "updatedAt": "2026-11-03T23:24:53.414Z"
+          }
+        }
+      }
+    },
+    "opencode-interop": {
+      "handler": "opencode-interop",
+      "state": {
+        "managedIgnoreDirs": [
+          ".opencode/agents"
+        ],
+        "installs": {
+          ".opencode/agents/build.md": {
+            "kind": "agents",
+            "name": "build",
+            "method": "link",
+            "contentHash": "",
+            "installedAt": "2026-11-03T23:24:53.416Z",
+            "updatedAt": "2026-11-03T23:24:53.416Z"
+          },
+          ".opencode/agents/code.md": {
+            "kind": "agents",
+            "name": "code",
+            "method": "link",
+            "contentHash": "",
+            "installedAt": "2026-11-03T23:24:53.416Z",
+            "updatedAt": "2026-11-03T23:24:53.416Z"
+          },
+          ".opencode/agents/plan.md": {
+            "kind": "agents",
+            "name": "plan",
+            "method": "link",
+            "contentHash": "",
+            "installedAt": "2026-11-03T23:24:53.416Z",
+            "updatedAt": "2026-11-03T23:24:53.416Z"
           }
         }
       }
