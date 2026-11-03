@@ -8,7 +8,7 @@ Unlike a traditional suite runner, it is intended to run individual commands aga
 
 This branch contains the `@uny/di` and `@uny/core` foundations plus a partial `@uny/cli` with configuration loading and `inspect`. The instruction runner, persistent hosts, sessions, and device adapters remain planned work.
 
-See `CONTRIBUTORS.md` for development setup notes.
+See `CONTRIBUTORS.md` for development setup notes and MCP configuration.
 See `.opencode/plans/architecture.md` and `.opencode/plans/implementation-plan.md` for the current design and delivery status.
 
 ## Planned Design

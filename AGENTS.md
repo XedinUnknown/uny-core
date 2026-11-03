@@ -14,8 +14,8 @@ Agent-only notes:
 - Restart OpenCode after changes to `opencode.json`, `.agents/`, or `.opencode/` files.
 - Serena MCP is launched directly by each client on demand over stdio via `uvx`. There is no Docker Compose `serena` service and no shared/background server; do not add one back — a shared server can be silently mutated (active project, memory writes) by an unrelated client or session.
 - Serena MCP calls should go through the MCP tool interface, not the `serena` CLI, so results reflect the actual connected server rather than a separately-invoked process that may target a different data directory.
-- `mcp-compose.json` does not manage Serena because it creates persistent shared gateways. Do not use it as a Serena configuration source.
-- `mcp_compose.toml` has been replaced by `mcp-compose.json`; do not recreate the TOML file.
+- `mcp.servers.json` is the canonical MCP server configuration. `bin/sync-mcp.mjs` projects it into `opencode.json` (OpenCode) and `.mcp.json` (Claude and other MCP clients). Both projections are committed. Do not edit managed entries in those files directly — edit `mcp.servers.json` and re-run sync-mcp.
+- Do not recreate `mcp-compose.json` or `mcp_compose.toml`; both are retired. MCP lifecycle is now fully owned by direct per-client native configuration generated from `mcp.servers.json`.
 
 ## Package Structure
 
