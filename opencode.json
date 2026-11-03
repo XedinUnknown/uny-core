@@ -65,9 +65,16 @@
   },
   "agent": {
     "plan": {
+      "color": "#AE6FD3",
       "permission": {
         "edit": "deny"
       }
+    },
+    "build": {
+      "color": "#5C9CF5"
+    },
+    "code": {
+      "color": "#FFE992"
     }
   }
 }
