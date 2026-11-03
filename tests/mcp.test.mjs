@@ -8,7 +8,7 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile, readFile, symlink, unlink } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, readFile, symlink, unlink, lstat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -33,9 +33,7 @@ const SRV_SERENA = {
 
 const SRV_JETBRAINS = { type: "sse", url: "http://127.0.0.1:64342/sse" };
 
-async function tmp() {
-  return mkdtemp(join(tmpdir(), "mcp-test-"));
-}
+async function tmp() { return mkdtemp(join(tmpdir(), "mcp-test-")); }
 
 async function wCanonical(root, servers = { serena: SRV_SERENA, jetbrains: SRV_JETBRAINS }) {
   await writeFile(join(root, "mcp.servers.json"), JSON.stringify({ servers }, null, 2));
@@ -60,7 +58,7 @@ async function withRoot(fn) {
 }
 
 // ---------------------------------------------------------------------------
-// loadCanonical — shape validation
+// loadCanonical — shape and validation
 // ---------------------------------------------------------------------------
 
 describe("loadCanonical", () => {
@@ -80,7 +78,7 @@ describe("loadCanonical", () => {
     await assert.rejects(sync.loadCanonical(root), /invalid JSON/i);
   }));
 
-  it("throws if root is an array not object", () => withRoot(async (root) => {
+  it("throws if root is an array", () => withRoot(async (root) => {
     await writeFile(join(root, "mcp.servers.json"), JSON.stringify([]));
     await assert.rejects(sync.loadCanonical(root), /plain object/i);
   }));
@@ -99,6 +97,12 @@ describe("loadCanonical", () => {
     await writeFile(join(root, "mcp.servers.json"),
       JSON.stringify({ servers: { x: { type: "stdio", args: [] } } }));
     await assert.rejects(sync.loadCanonical(root), /command/i);
+  }));
+
+  it("throws if stdio command is empty string", () => withRoot(async (root) => {
+    await writeFile(join(root, "mcp.servers.json"),
+      JSON.stringify({ servers: { x: { type: "stdio", command: "", args: [] } } }));
+    await assert.rejects(sync.loadCanonical(root), /empty|nonempty/i);
   }));
 
   it("throws if stdio command is not a string", () => withRoot(async (root) => {
@@ -132,6 +136,12 @@ describe("loadCanonical", () => {
     await assert.rejects(sync.loadCanonical(root), /url/i);
   }));
 
+  it("throws if sse url is empty string", () => withRoot(async (root) => {
+    await writeFile(join(root, "mcp.servers.json"),
+      JSON.stringify({ servers: { x: { type: "sse", url: "" } } }));
+    await assert.rejects(sync.loadCanonical(root), /empty|nonempty/i);
+  }));
+
   it("throws if sse url is not a string", () => withRoot(async (root) => {
     await writeFile(join(root, "mcp.servers.json"),
       JSON.stringify({ servers: { x: { type: "sse", url: 99 } } }));
@@ -157,10 +167,28 @@ describe("loadCanonical", () => {
   }));
 
   it("throws on reserved server name __proto__", () => withRoot(async (root) => {
-    // Can't use JSON key __proto__ safely; write raw
     await writeFile(join(root, "mcp.servers.json"),
       '{"servers":{"__proto__":{"type":"sse","url":"http://x"}}}');
     await assert.rejects(sync.loadCanonical(root), /reserved/i);
+  }));
+
+  it("throws on invalid server name with spaces", () => withRoot(async (root) => {
+    await writeFile(join(root, "mcp.servers.json"),
+      JSON.stringify({ servers: { "bad name": { type: "sse", url: "http://x/sse" } } }));
+    await assert.rejects(sync.loadCanonical(root), /name|invalid/i);
+  }));
+
+  it("throws on invalid server name starting with digit", () => withRoot(async (root) => {
+    await writeFile(join(root, "mcp.servers.json"),
+      JSON.stringify({ servers: { "1bad": { type: "sse", url: "http://x/sse" } } }));
+    await assert.rejects(sync.loadCanonical(root), /name|invalid/i);
+  }));
+
+  it("accepts server name with letters digits underscore dash", () => withRoot(async (root) => {
+    await writeFile(join(root, "mcp.servers.json"),
+      JSON.stringify({ servers: { "my-tool_2": { type: "sse", url: "http://x/sse" } } }));
+    const c = await sync.loadCanonical(root);
+    assert.ok(c.servers["my-tool_2"]);
   }));
 
   it("throws on ${VAR:-default} interpolation syntax", () => withRoot(async (root) => {
@@ -168,6 +196,27 @@ describe("loadCanonical", () => {
       JSON.stringify({ servers: { x: { type: "stdio",
         command: "${HOME:-/usr}/bin/tool", args: [] } } }));
     await assert.rejects(sync.loadCanonical(root), /not supported/i);
+  }));
+
+  it("throws on ${123} malformed variable name", () => withRoot(async (root) => {
+    await writeFile(join(root, "mcp.servers.json"),
+      JSON.stringify({ servers: { x: { type: "stdio",
+        command: "${123}/bin/x", args: [] } } }));
+    await assert.rejects(sync.loadCanonical(root), /variable|invalid|\$/i);
+  }));
+
+  it("throws on ${foo bar} malformed variable name", () => withRoot(async (root) => {
+    await writeFile(join(root, "mcp.servers.json"),
+      JSON.stringify({ servers: { x: { type: "stdio",
+        command: "/bin/x", args: ["${foo bar}"] } } }));
+    await assert.rejects(sync.loadCanonical(root), /variable|invalid|\$/i);
+  }));
+
+  it("throws on {env:HOME} in canonical (ambiguous with OpenCode syntax)", () => withRoot(async (root) => {
+    await writeFile(join(root, "mcp.servers.json"),
+      JSON.stringify({ servers: { x: { type: "stdio",
+        command: "{env:HOME}/bin/x", args: [] } } }));
+    await assert.rejects(sync.loadCanonical(root), /\{env:/i);
   }));
 
   it("accepts sse server with headers", () => withRoot(async (root) => {
@@ -201,20 +250,36 @@ describe("translateForOpenCode", () => {
     assert.deepEqual(r.environment, { BROWSER: "/bin/true" });
   });
 
-  it("sse → type:remote, url preserved", () => {
-    const r = sync.translateForOpenCode("x", { type: "sse", url: "http://h/sse" });
+  it("sse → type:remote, url translated through toOC", () => {
+    // url may contain ${VAR} references that must be translated
+    const r = sync.translateForOpenCode("x", {
+      type: "sse", url: "http://${HOST}/sse",
+    });
     assert.equal(r.type, "remote");
-    assert.equal(r.url, "http://h/sse");
+    assert.equal(r.url, "http://{env:HOST}/sse");
+  });
+
+  it("sse → plain url preserved if no interpolation", () => {
+    const r = sync.translateForOpenCode("x", { type: "sse", url: "http://127.0.0.1:64342/sse" });
+    assert.equal(r.type, "remote");
+    assert.equal(r.url, "http://127.0.0.1:64342/sse");
     assert.ok(!("command" in r));
     assert.ok(!("environment" in r));
   });
 
-  it("does not expand ${HOME} — uses literal process env at runtime", () => {
+  it("sse with headers — header values translated through toOC", () => {
+    const r = sync.translateForOpenCode("x", {
+      type: "sse", url: "http://h/sse",
+      headers: { Authorization: "Bearer ${TOKEN}" },
+    });
+    assert.equal(r.headers.Authorization, "Bearer {env:TOKEN}");
+  });
+
+  it("does not expand ${HOME} at generation time", () => {
     const r = sync.translateForOpenCode("x", {
       type: "stdio", command: "${HOME}/bin/x", args: [],
     });
-    assert.ok(!r.command[0].includes(process.env.HOME ?? "__MISSING__"),
-      "must not expand HOME at generation time");
+    assert.ok(!r.command[0].includes(process.env.HOME ?? "__MISSING__"));
     assert.equal(r.command[0], "{env:HOME}/bin/x");
   });
 
@@ -238,16 +303,9 @@ describe("translateForOpenCode", () => {
     assert.ok(!("environment" in r));
   });
 
-  it("omits environment when env is empty object", () => {
+  it("omits environment when env is empty", () => {
     const r = sync.translateForOpenCode("x", { type: "stdio", command: "/bin/x", args: [], env: {} });
     assert.ok(!("environment" in r));
-  });
-
-  it("sse with headers preserved as-is", () => {
-    const r = sync.translateForOpenCode("x", {
-      type: "sse", url: "http://h/sse", headers: { Authorization: "Bearer t" },
-    });
-    assert.deepEqual(r.headers, { Authorization: "Bearer t" });
   });
 });
 
@@ -256,7 +314,7 @@ describe("translateForOpenCode", () => {
 // ---------------------------------------------------------------------------
 
 describe("translateForClaude", () => {
-  it("stdio → type:stdio, command string, args, env", () => {
+  it("stdio → type:stdio, command string (${VAR} unchanged), args, env", () => {
     const r = sync.translateForClaude("x", {
       type: "stdio", command: "${HOME}/.local/bin/uvx",
       args: ["-p", "3.13"], env: { BROWSER: "/bin/true" },
@@ -267,7 +325,7 @@ describe("translateForClaude", () => {
     assert.deepEqual(r.env, { BROWSER: "/bin/true" });
   });
 
-  it("sse → type:sse, url — type field required", () => {
+  it("sse → type:sse required, url unchanged", () => {
     const r = sync.translateForClaude("x", { type: "sse", url: "http://h/sse" });
     assert.equal(r.type, "sse");
     assert.equal(r.url, "http://h/sse");
@@ -275,10 +333,21 @@ describe("translateForClaude", () => {
     assert.ok(!("env" in r));
   });
 
-  it("${VAR} preserved unchanged in stdio command", () => {
+  it("sse url with ${VAR} preserved unchanged in Claude", () => {
+    const r = sync.translateForClaude("x", { type: "sse", url: "http://${HOST}/sse" });
+    assert.equal(r.url, "http://${HOST}/sse");
+  });
+
+  it("sse with headers — values preserved unchanged", () => {
     const r = sync.translateForClaude("x", {
-      type: "stdio", command: "${HOME}/bin/x", args: [],
+      type: "sse", url: "http://h/sse",
+      headers: { Authorization: "Bearer ${TOKEN}" },
     });
+    assert.equal(r.headers.Authorization, "Bearer ${TOKEN}");
+  });
+
+  it("${VAR} preserved unchanged in stdio command", () => {
+    const r = sync.translateForClaude("x", { type: "stdio", command: "${HOME}/bin/x", args: [] });
     assert.equal(r.command, "${HOME}/bin/x");
   });
 
@@ -287,16 +356,9 @@ describe("translateForClaude", () => {
     assert.ok(!("env" in r));
   });
 
-  it("omits env when env is empty object", () => {
+  it("omits env when empty", () => {
     const r = sync.translateForClaude("x", { type: "stdio", command: "/bin/x", args: [], env: {} });
     assert.ok(!("env" in r));
-  });
-
-  it("sse with headers", () => {
-    const r = sync.translateForClaude("x", {
-      type: "sse", url: "http://h/sse", headers: { Authorization: "Bearer t" },
-    });
-    assert.deepEqual(r.headers, { Authorization: "Bearer t" });
   });
 });
 
@@ -320,12 +382,10 @@ describe("generate — projection shape", () => {
     await wCanonical(root);
     await sync.generate(root, { dryRun: false, adopt: false });
     const cl = await rJSON(join(root, ".mcp.json"));
-    // stdio: type:stdio required
     assert.equal(cl.mcpServers.serena.type, "stdio");
     assert.equal(cl.mcpServers.serena.command, "${HOME}/.local/bin/uvx");
     assert.deepEqual(cl.mcpServers.serena.args, SRV_SERENA.args);
     assert.deepEqual(cl.mcpServers.serena.env, { BROWSER: "/bin/true" });
-    // sse: type:sse required
     assert.equal(cl.mcpServers.jetbrains.type, "sse");
     assert.equal(cl.mcpServers.jetbrains.url, "http://127.0.0.1:64342/sse");
   }));
@@ -356,11 +416,12 @@ describe("generate — projection shape", () => {
     assert.ok(cl.mcpServers.serena);
   }));
 
-  it("dry-run returns projected content without writing", () => withRoot(async (root) => {
+  it("dry-run returns projected content without writing any files", () => withRoot(async (root) => {
     await wCanonical(root);
     const result = await sync.generate(root, { dryRun: true, adopt: false });
     assert.ok(!existsSync(join(root, "opencode.json")));
     assert.ok(!existsSync(join(root, ".mcp.json")));
+    assert.ok(!existsSync(join(root, ".mcp.manifest.json")));
     assert.equal(result.opencode.mcp.serena.type, "local");
     assert.equal(result.claude.mcpServers.serena.type, "stdio");
     assert.equal(result.claude.mcpServers.jetbrains.type, "sse");
@@ -368,7 +429,7 @@ describe("generate — projection shape", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Idempotence — no writes when content unchanged
+// Idempotence
 // ---------------------------------------------------------------------------
 
 describe("idempotence", () => {
@@ -383,10 +444,22 @@ describe("idempotence", () => {
     assert.equal(await readFile(join(root, ".mcp.json"), "utf8"), cl1);
     assert.equal(await readFile(join(root, ".mcp.manifest.json"), "utf8"), mf1);
   }));
+
+  it("manifest mtime unchanged on idempotent run", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await sync.generate(root, { dryRun: false, adopt: false });
+    const mfPath = join(root, ".mcp.manifest.json");
+    const mtime1 = (await lstat(mfPath)).mtimeMs;
+    // Small delay to ensure mtime would differ if written
+    await new Promise((r) => setTimeout(r, 10));
+    await sync.generate(root, { dryRun: false, adopt: false });
+    const mtime2 = (await lstat(mfPath)).mtimeMs;
+    assert.equal(mtime1, mtime2, "manifest must not be rewritten on idempotent run");
+  }));
 });
 
 // ---------------------------------------------------------------------------
-// Conflict detection — snapshot-based
+// Conflict detection
 // ---------------------------------------------------------------------------
 
 describe("conflict detection", () => {
@@ -419,7 +492,6 @@ describe("conflict detection", () => {
   it("rejects externally modified managed entry without --adopt", () => withRoot(async (root) => {
     await wCanonical(root);
     await sync.generate(root, { dryRun: false, adopt: false });
-    // Externally tamper with the managed serena entry
     const oc = await rJSON(join(root, "opencode.json"));
     oc.mcp.serena.command[0] = "externally-changed";
     await writeFile(join(root, "opencode.json"), JSON.stringify(oc, null, 2));
@@ -446,18 +518,45 @@ describe("conflict detection", () => {
     await sync.generate(root, { dryRun: false, adopt: false });
   }));
 
-  it("non-conflicting unmanaged entry (same value) does not fail", () => withRoot(async (root) => {
+  it("non-conflicting unmanaged entry matching projected value does not fail", () => withRoot(async (root) => {
     await wCanonical(root);
-    // Write an entry that already matches what we'd project
     const projected = sync.translateForOpenCode("serena", SRV_SERENA);
     await wOC(root, { mcp: { serena: projected } });
-    // Should not throw — value matches projected
     await sync.generate(root, { dryRun: false, adopt: false });
+  }));
+
+  // Regression: externally-modified previously-managed entry being removed from canonical
+  // must not be silently deleted — the external edit means we can't assume ownership
+  it("refuses to remove a previously-managed entry that was externally modified after removal from canonical", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await sync.generate(root, { dryRun: false, adopt: false });
+    // Externally modify jetbrains in the projection
+    const oc = await rJSON(join(root, "opencode.json"));
+    oc.mcp.jetbrains.url = "http://external-edit/sse";
+    await writeFile(join(root, "opencode.json"), JSON.stringify(oc, null, 2));
+    // Now remove jetbrains from canonical — should detect the external edit before deleting
+    await wCanonical(root, { serena: SRV_SERENA });
+    await assert.rejects(
+      sync.generate(root, { dryRun: false, adopt: false }),
+      /externally modified|adopt/i
+    );
+  }));
+
+  it("--adopt removes externally-modified previously-managed entry when dropped from canonical", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await sync.generate(root, { dryRun: false, adopt: false });
+    const oc = await rJSON(join(root, "opencode.json"));
+    oc.mcp.jetbrains.url = "http://external-edit/sse";
+    await writeFile(join(root, "opencode.json"), JSON.stringify(oc, null, 2));
+    await wCanonical(root, { serena: SRV_SERENA });
+    await sync.generate(root, { dryRun: false, adopt: true });
+    const oc2 = await rJSON(join(root, "opencode.json"));
+    assert.ok(!oc2.mcp.jetbrains, "externally-modified removed entry deleted with --adopt");
   }));
 });
 
 // ---------------------------------------------------------------------------
-// Manifest — snapshot-based ownership
+// Manifest — snapshot-based ownership and schema validation
 // ---------------------------------------------------------------------------
 
 describe("manifest", () => {
@@ -466,11 +565,10 @@ describe("manifest", () => {
     await sync.generate(root, { dryRun: false, adopt: false });
     const mf = await rJSON(join(root, ".mcp.manifest.json"));
     assert.deepEqual(mf.managed.sort(), ["jetbrains", "serena"]);
-    assert.ok(mf.snapshots["oc:serena"]);
-    assert.ok(mf.snapshots["cl:serena"]);
-    assert.ok(mf.snapshots["oc:jetbrains"]);
-    assert.ok(mf.snapshots["cl:jetbrains"]);
-    // Snapshot content must match projected values
+    assert.ok(mf.snapshots["oc:serena"], "oc:serena snapshot present");
+    assert.ok(mf.snapshots["cl:serena"], "cl:serena snapshot present");
+    assert.ok(mf.snapshots["oc:jetbrains"], "oc:jetbrains snapshot present");
+    assert.ok(mf.snapshots["cl:jetbrains"], "cl:jetbrains snapshot present");
     assert.deepEqual(mf.snapshots["oc:serena"], sync.translateForOpenCode("serena", SRV_SERENA));
     assert.deepEqual(mf.snapshots["cl:jetbrains"], sync.translateForClaude("jetbrains", SRV_JETBRAINS));
   }));
@@ -493,6 +591,8 @@ describe("manifest", () => {
     assert.deepEqual(mf.managed, ["serena"]);
     assert.ok(!mf.snapshots["oc:jetbrains"]);
     assert.ok(!mf.snapshots["cl:jetbrains"]);
+    assert.ok(mf.snapshots["oc:serena"]);
+    assert.ok(mf.snapshots["cl:serena"]);
   }));
 
   it("throws on malformed manifest JSON", () => withRoot(async (root) => {
@@ -513,6 +613,48 @@ describe("manifest", () => {
       /managed.*array|array/i
     );
   }));
+
+  it("throws if manifest snapshots is not a plain object", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await writeFile(join(root, ".mcp.manifest.json"),
+      JSON.stringify({ managed: [], snapshots: [] }));
+    await assert.rejects(
+      sync.generate(root, { dryRun: false, adopt: false }),
+      /snapshots.*plain|plain.*snapshots|plain object/i
+    );
+  }));
+
+  it("throws if manifest managed contains non-string entry", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await writeFile(join(root, ".mcp.manifest.json"),
+      JSON.stringify({ managed: [42], snapshots: {} }));
+    await assert.rejects(
+      sync.generate(root, { dryRun: false, adopt: false }),
+      /managed|string/i
+    );
+  }));
+
+  it("throws if manifest is a symlink", () => withRoot(async (root) => {
+    await wCanonical(root);
+    const target = join(root, "real-manifest.json");
+    await writeFile(target, JSON.stringify({ managed: [], snapshots: {} }));
+    await symlink(target, join(root, ".mcp.manifest.json"));
+    await assert.rejects(
+      sync.generate(root, { dryRun: false, adopt: false }),
+      /symlink.*manifest|manifest.*symlink/i
+    );
+  }));
+
+  it("throws if manifest is a symlink even in check mode", () => withRoot(async (root) => {
+    await wCanonical(root);
+    const target = join(root, "real-manifest.json");
+    await writeFile(target, JSON.stringify({ managed: [], snapshots: {} }));
+    await symlink(target, join(root, ".mcp.manifest.json"));
+    await assert.rejects(
+      sync.check(root),
+      /symlink.*manifest|manifest.*symlink/i
+    );
+  }));
 });
 
 // ---------------------------------------------------------------------------
@@ -520,7 +662,7 @@ describe("manifest", () => {
 // ---------------------------------------------------------------------------
 
 describe("removed-entry semantics", () => {
-  it("removes previously managed entry from both projections when dropped from canonical", () => withRoot(async (root) => {
+  it("removes previously managed entry from both projections when canonical shrinks", () => withRoot(async (root) => {
     await wCanonical(root);
     await sync.generate(root, { dryRun: false, adopt: false });
     await wCanonical(root, { serena: SRV_SERENA });
@@ -542,14 +684,12 @@ describe("removed-entry semantics", () => {
     assert.ok(!oc.mcp.jetbrains, "jetbrains gone");
   }));
 
-  it("no-op when managed entry already absent from target", () => withRoot(async (root) => {
+  it("no-op when managed entry already absent from target before removal from canonical", () => withRoot(async (root) => {
     await wCanonical(root);
     await sync.generate(root, { dryRun: false, adopt: false });
-    // Remove jetbrains from file manually
     const oc = await rJSON(join(root, "opencode.json"));
     delete oc.mcp.jetbrains;
     await writeFile(join(root, "opencode.json"), JSON.stringify(oc, null, 2));
-    // Now drop from canonical — should succeed
     await wCanonical(root, { serena: SRV_SERENA });
     await sync.generate(root, { dryRun: false, adopt: false });
   }));
@@ -612,6 +752,54 @@ describe("check", () => {
     const r = await sync.check(root);
     assert.equal(r.ok, true);
   }));
+
+  // check must detect when a managed entry is present in the projection but
+  // absent in canonical (i.e. the canonical was updated but projections weren't)
+  it("detects stale managed entry in projection after canonical removes it", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await sync.generate(root, { dryRun: false, adopt: false });
+    // Update canonical to remove jetbrains without re-running generate
+    await wCanonical(root, { serena: SRV_SERENA });
+    const r = await sync.check(root);
+    assert.equal(r.ok, false);
+    assert.ok(r.drifted.some((d) => /jetbrains/.test(d)),
+      `expected jetbrains in drifted, got: ${JSON.stringify(r.drifted)}`);
+  }));
+
+  // check must detect when manifest is stale (managed list differs from canonical)
+  it("detects stale manifest after canonical changes", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await sync.generate(root, { dryRun: false, adopt: false });
+    // Update canonical to add a new server without re-running generate
+    await wCanonical(root, {
+      serena: SRV_SERENA,
+      jetbrains: SRV_JETBRAINS,
+      newserver: { type: "sse", url: "http://new/sse" },
+    });
+    const r = await sync.check(root);
+    assert.equal(r.ok, false);
+    assert.ok(r.drifted.some((d) => /newserver/.test(d)),
+      `expected newserver in drifted, got: ${JSON.stringify(r.drifted)}`);
+  }));
+
+  // check does not write any files
+  it("check does not modify any files", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await sync.generate(root, { dryRun: false, adopt: false });
+    const oc1 = await readFile(join(root, "opencode.json"), "utf8");
+    const cl1 = await readFile(join(root, ".mcp.json"), "utf8");
+    const mf1 = await readFile(join(root, ".mcp.manifest.json"), "utf8");
+    // Tamper then check — check must not write
+    const oc = JSON.parse(oc1);
+    oc.mcp.serena.command[0] = "tampered";
+    await writeFile(join(root, "opencode.json"), JSON.stringify(oc, null, 2));
+    await sync.check(root);
+    // opencode.json should still have the tampered value (check did not rewrite)
+    const oc2 = await rJSON(join(root, "opencode.json"));
+    assert.equal(oc2.mcp.serena.command[0], "tampered");
+    assert.equal(await readFile(join(root, ".mcp.json"), "utf8"), cl1);
+    assert.equal(await readFile(join(root, ".mcp.manifest.json"), "utf8"), mf1);
+  }));
 });
 
 // ---------------------------------------------------------------------------
@@ -643,17 +831,31 @@ describe("symlink safety", () => {
 });
 
 // ---------------------------------------------------------------------------
-// JSON target structure guards
+// JSON target structure guards and null handling
 // ---------------------------------------------------------------------------
 
 describe("target file structure guards", () => {
+  it("throws if opencode.json contains JSON null", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await writeFile(join(root, "opencode.json"), "null");
+    await assert.rejects(
+      sync.generate(root, { dryRun: false, adopt: false }),
+      /plain object|null/i
+    );
+  }));
+
+  it("throws if .mcp.json contains JSON null", () => withRoot(async (root) => {
+    await wCanonical(root);
+    await writeFile(join(root, ".mcp.json"), "null");
+    await assert.rejects(
+      sync.generate(root, { dryRun: false, adopt: false }),
+      /plain object|null/i
+    );
+  }));
+
   it("throws if opencode.json contains a JSON array at root", () => withRoot(async (root) => {
     await wCanonical(root);
     await writeFile(join(root, "opencode.json"), "[]");
-    // readJsonFile returns the parsed value; generate merges using spread — array spread is wrong
-    // The generate function uses { ...existingOc } which silently ignores array indexes.
-    // We want this to fail. The corrected generate must validate the target root is an object.
-    // This test documents and enforces that contract.
     await assert.rejects(
       sync.generate(root, { dryRun: false, adopt: false }),
       /plain object|invalid|array/i
@@ -695,13 +897,31 @@ describe("target file structure guards", () => {
       /invalid JSON/i
     );
   }));
+
+  it("malformed destination leaves other files unchanged", () => withRoot(async (root) => {
+    // Write canonical and a valid .mcp.json; corrupt opencode.json
+    // Verify .mcp.json is not touched after the error
+    await wCanonical(root);
+    const validCl = { mcpServers: { other: { type: "stdio", command: "x", args: [] } } };
+    await wCL(root, validCl);
+    await writeFile(join(root, "opencode.json"), "{ broken }");
+    await assert.rejects(
+      sync.generate(root, { dryRun: false, adopt: false }),
+      /invalid JSON/i
+    );
+    // .mcp.json must be untouched
+    const cl = await rJSON(join(root, ".mcp.json"));
+    assert.deepEqual(cl, validCl);
+    // manifest must not have been written
+    assert.ok(!existsSync(join(root, ".mcp.manifest.json")));
+  }));
 });
 
 // ---------------------------------------------------------------------------
-// Generic ${VAR} interpolation
+// Generic ${VAR} interpolation and validation
 // ---------------------------------------------------------------------------
 
-describe("generic variable interpolation", () => {
+describe("variable interpolation", () => {
   it("translates ${MYVAR} in command for OpenCode", () => {
     const r = sync.translateForOpenCode("x", {
       type: "stdio", command: "${MYVAR}/bin/x", args: [],
@@ -724,7 +944,22 @@ describe("generic variable interpolation", () => {
     assert.equal(r.environment.COMBINED, "{env:PREFIX}:{env:SUFFIX}");
   });
 
-  it("preserves ${VAR} unchanged in Claude output", () => {
+  it("translates ${VAR} in SSE url for OpenCode", () => {
+    const r = sync.translateForOpenCode("x", {
+      type: "sse", url: "http://${API_HOST}/sse",
+    });
+    assert.equal(r.url, "http://{env:API_HOST}/sse");
+  });
+
+  it("translates ${VAR} in SSE header values for OpenCode", () => {
+    const r = sync.translateForOpenCode("x", {
+      type: "sse", url: "http://h/sse",
+      headers: { Authorization: "Bearer ${TOKEN}" },
+    });
+    assert.equal(r.headers.Authorization, "Bearer {env:TOKEN}");
+  });
+
+  it("preserves ${VAR} unchanged in Claude stdio output", () => {
     const r = sync.translateForClaude("x", {
       type: "stdio", command: "${MYVAR}/bin/x", args: ["${A}"],
       env: { K: "${V}" },
@@ -732,5 +967,20 @@ describe("generic variable interpolation", () => {
     assert.equal(r.command, "${MYVAR}/bin/x");
     assert.equal(r.args[0], "${A}");
     assert.equal(r.env.K, "${V}");
+  });
+
+  it("preserves ${VAR} in SSE url unchanged in Claude output", () => {
+    const r = sync.translateForClaude("x", {
+      type: "sse", url: "http://${API_HOST}/sse",
+    });
+    assert.equal(r.url, "http://${API_HOST}/sse");
+  });
+
+  it("preserves ${VAR} in SSE header values unchanged in Claude output", () => {
+    const r = sync.translateForClaude("x", {
+      type: "sse", url: "http://h/sse",
+      headers: { Authorization: "Bearer ${TOKEN}" },
+    });
+    assert.equal(r.headers.Authorization, "Bearer ${TOKEN}");
   });
 });

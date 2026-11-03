@@ -28,16 +28,33 @@ const RESERVED_NAMES = new Set(["__proto__", "constructor", "prototype"]);
 const STDIO_KEYS     = new Set(["type", "command", "args", "env"]);
 const SSE_KEYS       = new Set(["type", "url", "headers"]);
 
+// Valid server name: identifier-like, starts with letter or underscore,
+// followed by letters, digits, underscores, or hyphens.
+const VALID_SERVER_NAME = /^[A-Za-z_][A-Za-z0-9_-]*$/;
+
+// Valid ${VAR} variable name: must be a valid shell identifier (letter/underscore start).
+const VALID_VAR_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
 // Validation helpers
 
 function assertStr(val, label) {
   if (typeof val !== "string") throw new Error(`${label} must be a string`);
+  if (val.length === 0) throw new Error(`${label} must be nonempty (empty string not allowed)`);
+  // Reject ${VAR:-default} syntax
   if (/\$\{[^}]*:-[^}]*\}/.test(val))
     throw new Error(`${label}: \${VAR:-default} syntax is not supported`);
+  // Reject {env:...} in canonical — that is OpenCode output syntax, not input
+  if (/\{env:[^}]*\}/.test(val))
+    throw new Error(`${label}: {env:VAR} syntax is not allowed in canonical; use \${VAR}`);
+  // Validate any ${...} references: inner name must be a valid identifier
+  for (const m of val.matchAll(/\$\{([^}]*)\}/g)) {
+    if (!VALID_VAR_NAME.test(m[1]))
+      throw new Error(`${label}: invalid variable name in \${${m[1]}}`);
+  }
 }
 
 function assertPlain(val, label) {
-  if (!val || typeof val !== "object" || Array.isArray(val))
+  if (val === null || val === undefined || typeof val !== "object" || Array.isArray(val))
     throw new Error(`${label} must be a plain object`);
 }
 
@@ -82,6 +99,8 @@ export async function loadCanonical(root) {
   assertPlain(parsed.servers, 'mcp.servers.json "servers"');
   for (const [name, entry] of Object.entries(parsed.servers)) {
     if (RESERVED_NAMES.has(name)) throw new Error(`Server name "${name}" is reserved`);
+    if (!VALID_SERVER_NAME.test(name))
+      throw new Error(`Server name "${name}" is invalid; must match [A-Za-z_][A-Za-z0-9_-]*`);
     validateServerEntry(name, entry);
   }
   return parsed;
@@ -97,11 +116,11 @@ export function translateForOpenCode(_name, server) {
   if (server.type === "stdio") {
     const result = { type: "local", command: [toOC(server.command), ...(server.args ?? []).map(toOC)] };
     if (nonempty(server.env)) result.environment = mapStr(server.env, toOC);
-    if (nonempty(server.headers)) result.headers = { ...server.headers };
     return result;
   }
-  const result = { type: "remote", url: server.url };
-  if (nonempty(server.headers)) result.headers = { ...server.headers };
+  // sse → remote; translate ${VAR} in url and header values
+  const result = { type: "remote", url: toOC(server.url) };
+  if (nonempty(server.headers)) result.headers = mapStr(server.headers, toOC);
   return result;
 }
 
@@ -109,9 +128,9 @@ export function translateForClaude(_name, server) {
   if (server.type === "stdio") {
     const result = { type: "stdio", command: server.command, args: server.args ?? [] };
     if (nonempty(server.env)) result.env = { ...server.env };
-    if (nonempty(server.headers)) result.headers = { ...server.headers };
     return result;
   }
+  // sse → sse; ${VAR} kept as-is for Claude
   const result = { type: "sse", url: server.url };
   if (nonempty(server.headers)) result.headers = { ...server.headers };
   return result;
@@ -123,8 +142,12 @@ async function readJSON(path) {
   let raw;
   try { raw = await readFile(path, "utf8"); }
   catch (err) { if (err.code === "ENOENT") return null; throw err; }
-  try { return JSON.parse(raw); }
+  let parsed;
+  try { parsed = JSON.parse(raw); }
   catch (err) { throw new Error(`${path}: invalid JSON: ${err.message}`); }
+  // JSON null is not a valid target file (assertPlain would catch it, but ?? {} masks it)
+  if (parsed === null) throw new Error(`${path}: must be a plain object, got null`);
+  return parsed;
 }
 
 async function assertNotSymlink(path, label) {
@@ -141,38 +164,75 @@ function assertTargetShape(obj, file, mcp_key) {
 
 // Manifest
 
+async function assertManifestNotSymlink(root) {
+  const path = join(root, MANIFEST_FILE);
+  try {
+    if ((await lstat(path)).isSymbolicLink())
+      throw new Error(`Refusing to use manifest: "${path}" is a symlink`);
+  } catch (err) { if (err.code !== "ENOENT") throw err; }
+}
+
 async function loadManifest(root) {
+  // Guard before reading — symlink check applies in all code paths
+  await assertManifestNotSymlink(root);
   let raw;
   try { raw = await readFile(join(root, MANIFEST_FILE), "utf8"); }
   catch (err) { if (err.code === "ENOENT") return { managed: [], snapshots: {} }; throw err; }
   let data;
   try { data = JSON.parse(raw); }
   catch (err) { throw new Error(`${MANIFEST_FILE}: invalid JSON: ${err.message}`); }
-  if (!Array.isArray(data?.managed)) throw new Error(`${MANIFEST_FILE}: "managed" must be an array`);
+  if (!Array.isArray(data?.managed))
+    throw new Error(`${MANIFEST_FILE}: "managed" must be an array`);
+  for (const item of data.managed)
+    if (typeof item !== "string")
+      throw new Error(`${MANIFEST_FILE}: "managed" entries must be strings`);
+  if (data.snapshots !== undefined) assertPlain(data.snapshots, `${MANIFEST_FILE} "snapshots"`);
   return { managed: data.managed, snapshots: data.snapshots ?? {} };
 }
 
 async function writeManifest(root, managed, snapshots) {
-  await writeFile(join(root, MANIFEST_FILE), JSON.stringify({ managed: [...managed].sort(), snapshots }, null, 2) + "\n");
+  const path = join(root, MANIFEST_FILE);
+  const content = JSON.stringify({ managed: [...managed].sort(), snapshots }, null, 2) + "\n";
+  // Guard before writing
+  await assertNotSymlink(path, MANIFEST_FILE);
+  let cur;
+  try { cur = await readFile(path, "utf8"); } catch { /**/ }
+  if (content !== cur) await writeFile(path, content);
 }
 
 // Conflict detection (snapshot-based)
+// Checks entries in `projected` as well as entries in `prevManaged` that are absent
+// from `newServers` (i.e. being removed).
 
-function detectConflicts(current, projected, snapshots, adopt, label) {
+function detectConflicts(current, projected, prevManaged, newServers, snapshots, adopt, label) {
   if (adopt) return [];
-  return Object.keys(projected).flatMap((name) => {
-    if (!(name in current)) return [];
+  const conflicts = [];
+
+  // Check entries that will be written (projected)
+  for (const name of Object.keys(projected)) {
+    if (!(name in current)) continue;
     const snap = snapshots[name];
     const cur = JSON.stringify(current[name]);
     if (snap === undefined) {
-      return cur !== JSON.stringify(projected[name])
-        ? [`${label}: "${name}" exists and is not managed by sync-mcp; use --adopt`]
-        : [];
+      if (cur !== JSON.stringify(projected[name]))
+        conflicts.push(`${label}: "${name}" exists and is not managed by sync-mcp; use --adopt`);
+    } else if (cur !== JSON.stringify(snap)) {
+      conflicts.push(`${label}: "${name}" was externally modified since last sync; use --adopt to overwrite`);
     }
-    return cur !== JSON.stringify(snap)
-      ? [`${label}: "${name}" was externally modified since last sync; use --adopt to overwrite`]
-      : [];
-  });
+  }
+
+  // Check entries that were previously managed but are being removed from canonical
+  for (const name of prevManaged) {
+    if (name in newServers) continue;   // still present — handled above
+    if (!(name in current)) continue;   // already absent — no conflict
+    const snap = snapshots[name];
+    if (snap === undefined) continue;   // was never snapshotted — skip
+    const cur = JSON.stringify(current[name]);
+    if (cur !== JSON.stringify(snap))
+      conflicts.push(`${label}: "${name}" was externally modified since last sync; use --adopt to overwrite`);
+  }
+
+  return conflicts;
 }
 
 // generate
@@ -204,12 +264,16 @@ export async function generate(root, opts = {}) {
   assertTargetShape(existingOc, OPENCODE_FILE, "mcp");
   assertTargetShape(existingCl, CLAUDE_FILE, "mcpServers");
 
-  const ocSnaps = Object.fromEntries(Object.entries(snapshots).filter(([k]) => k.startsWith("oc:")).map(([k, v]) => [k.slice(3), v]));
-  const clSnaps = Object.fromEntries(Object.entries(snapshots).filter(([k]) => k.startsWith("cl:")).map(([k, v]) => [k.slice(3), v]));
+  const ocSnaps = Object.fromEntries(
+    Object.entries(snapshots).filter(([k]) => k.startsWith("oc:")).map(([k, v]) => [k.slice(3), v])
+  );
+  const clSnaps = Object.fromEntries(
+    Object.entries(snapshots).filter(([k]) => k.startsWith("cl:")).map(([k, v]) => [k.slice(3), v])
+  );
 
   const conflicts = [
-    ...detectConflicts(existingOc.mcp ?? {}, ocProjected, ocSnaps, adopt, OPENCODE_FILE),
-    ...detectConflicts(existingCl.mcpServers ?? {}, clProjected, clSnaps, adopt, CLAUDE_FILE),
+    ...detectConflicts(existingOc.mcp ?? {}, ocProjected, prevManaged, servers, ocSnaps, adopt, OPENCODE_FILE),
+    ...detectConflicts(existingCl.mcpServers ?? {}, clProjected, prevManaged, servers, clSnaps, adopt, CLAUDE_FILE),
   ];
   if (conflicts.length > 0) throw new Error(conflicts.join("\n"));
 
@@ -233,7 +297,10 @@ export async function generate(root, opts = {}) {
   if (clStr !== curCl) await writeFile(clPath, clStr);
 
   const newSnaps = {};
-  for (const n of Object.keys(servers)) { newSnaps[`oc:${n}`] = ocProjected[n]; newSnaps[`cl:${n}`] = clProjected[n]; }
+  for (const n of Object.keys(servers)) {
+    newSnaps[`oc:${n}`] = ocProjected[n];
+    newSnaps[`cl:${n}`] = clProjected[n];
+  }
   await writeManifest(root, Object.keys(servers), newSnaps);
 
   return { opencode: newOc, claude: newCl };
@@ -242,22 +309,37 @@ export async function generate(root, opts = {}) {
 // check
 
 export async function check(root) {
+  // Manifest symlink guard must propagate as a hard error (not swallowed into drifted)
+  await assertManifestNotSymlink(root);
+
   let expected;
   try { expected = await generate(root, { dryRun: true, adopt: false }); }
   catch (err) { return { ok: false, drifted: [`Cannot compute expected state: ${err.message}`] }; }
 
+  // Load manifest to know which names were managed (needed to detect stale removed entries)
+  let prevManaged = [];
+  try {
+    const mf = await loadManifest(root);
+    prevManaged = mf.managed;
+  } catch { /**/ }
+
   const drifted = [];
-  for (const [file, path, mcp_key] of [
-    [OPENCODE_FILE, join(root, OPENCODE_FILE), "mcp"],
-    [CLAUDE_FILE,   join(root, CLAUDE_FILE),   "mcpServers"],
+  for (const [file, path, mcp_key, expObj] of [
+    [OPENCODE_FILE, join(root, OPENCODE_FILE), "mcp",        expected.opencode],
+    [CLAUDE_FILE,   join(root, CLAUDE_FILE),   "mcpServers", expected.claude],
   ]) {
     const actual = await readJSON(path);
     if (!actual) { drifted.push(`${file} is missing`); continue; }
-    const exp = (file === OPENCODE_FILE ? expected.opencode.mcp : expected.claude.mcpServers) ?? {};
+    const exp = expObj[mcp_key] ?? {};
     const act = actual[mcp_key] ?? {};
+    // Check managed entries that should be present
     for (const n of Object.keys(exp))
       if (JSON.stringify(act[n]) !== JSON.stringify(exp[n]))
         drifted.push(`${file}: "${n}" has drifted`);
+    // Check previously-managed entries that should now be absent (removed from canonical)
+    for (const n of prevManaged)
+      if (!(n in exp) && n in act)
+        drifted.push(`${file}: "${n}" is stale (removed from canonical but still present in projection)`);
   }
   return { ok: drifted.length === 0, drifted };
 }
