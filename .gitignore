@@ -8,5 +8,4 @@ output/
 !.env.example
 .nx/
 .idea/
-.claude/
 .opencode/agents/

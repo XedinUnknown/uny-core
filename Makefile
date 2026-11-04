@@ -11,12 +11,8 @@ dependencies: .env
 agents: dependencies
 	pnpm exec agents-config install
 
-.PHONY: mcp
-mcp: dependencies
-	node bin/sync-mcp.mjs
-
 .PHONY: setup
-setup: agents mcp
+setup: agents
 	pnpm --version
 
 # Run from the host (not inside Docker) to verify host prerequisites.
