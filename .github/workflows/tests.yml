@@ -37,3 +37,17 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:tooling
       - run: pnpm test
+
+  validate-specs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: OPENSPEC_TELEMETRY=0 make validate-specs

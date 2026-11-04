@@ -11,6 +11,15 @@ This branch contains the `@uny/di` and `@uny/core` foundations plus a partial `@
 See `CONTRIBUTORS.md` for development setup notes and MCP configuration.
 See `.opencode/plans/architecture.md` and `.opencode/plans/implementation-plan.md` for the current design and delivery status.
 
+## Capability Specs
+
+OpenSpec capability specs are co-located with their subjects:
+
+- [`openspec/`](openspec/README.md) — repository-root entrypoint (`bin/uny.ts`).
+- [`packages/di/openspec/`](packages/di/openspec/README.md) — `@uny/di` composition and containers.
+- [`packages/core/openspec/`](packages/core/openspec/README.md) — `@uny/core` app configuration.
+- [`packages/cli/openspec/`](packages/cli/openspec/README.md) — `@uny/cli` command-line interface.
+
 ## Planned Design
 
 The runner is planned around config-based modularity:

@@ -9,3 +9,7 @@ output/
 .nx/
 .idea/
 .opencode/agents/
+.local/mcp-compose/
+.mcp.json
+.codex/config.toml
+/.config/openspec/

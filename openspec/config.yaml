@@ -1,0 +1,21 @@
+schema: spec-driven
+
+context: |
+  This root OpenSpec directory holds the spec for the repository-root entrypoint
+  (bin/uny.ts) and provides the tool-skill generation target that populates
+  .agents/skills/openspec-*/. Package-level capability specs live in their respective
+  package openspec directories:
+
+    packages/di/openspec/     — @uny/di composition and container specs
+    packages/core/openspec/   — @uny/core configuration specs
+    packages/cli/openspec/    — @uny/cli command-line interface specs
+
+  Preserve the implementation-first baseline distinction: plans, memories, and design
+  documents are not requirement sources. Propose future behaviour explicitly as changes
+  rather than silently expanding the baseline.
+
+  Historical evidence links, coverage notes, and quirks are in
+  docs/openspec-baseline-review.md at the repository root.
+
+  Use `openspec validate --all` from a package directory to validate its specs, or run
+  `make validate-specs` from the repository root to validate all roots.
