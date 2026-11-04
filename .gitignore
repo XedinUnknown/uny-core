@@ -8,3 +8,6 @@ output/
 !.env.example
 .nx/
 .idea/
+.local/mcp-compose/
+.mcp.json
+.codex/config.toml
