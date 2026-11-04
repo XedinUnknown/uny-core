@@ -66,6 +66,54 @@
             "contentHash": "",
             "installedAt": "2026-11-03T23:24:53.414Z",
             "updatedAt": "2026-11-03T23:24:53.414Z"
+          },
+          ".claude/skills/openspec-apply-change": {
+            "kind": "skills",
+            "name": "openspec-apply-change",
+            "method": "link",
+            "contentHash": "",
+            "installedAt": "2026-11-04T19:00:20.443Z",
+            "updatedAt": "2026-11-04T19:00:20.443Z"
+          },
+          ".claude/skills/openspec-archive-change": {
+            "kind": "skills",
+            "name": "openspec-archive-change",
+            "method": "link",
+            "contentHash": "",
+            "installedAt": "2026-11-04T19:00:20.444Z",
+            "updatedAt": "2026-11-04T19:00:20.444Z"
+          },
+          ".claude/skills/openspec-explore": {
+            "kind": "skills",
+            "name": "openspec-explore",
+            "method": "link",
+            "contentHash": "",
+            "installedAt": "2026-11-04T19:00:20.444Z",
+            "updatedAt": "2026-11-04T19:00:20.444Z"
+          },
+          ".claude/skills/openspec-propose": {
+            "kind": "skills",
+            "name": "openspec-propose",
+            "method": "link",
+            "contentHash": "",
+            "installedAt": "2026-11-04T19:00:20.444Z",
+            "updatedAt": "2026-11-04T19:00:20.444Z"
+          },
+          ".claude/skills/openspec-sync-specs": {
+            "kind": "skills",
+            "name": "openspec-sync-specs",
+            "method": "link",
+            "contentHash": "",
+            "installedAt": "2026-11-04T19:00:20.444Z",
+            "updatedAt": "2026-11-04T19:00:20.444Z"
+          },
+          ".claude/skills/openspec-update-change": {
+            "kind": "skills",
+            "name": "openspec-update-change",
+            "method": "link",
+            "contentHash": "",
+            "installedAt": "2026-11-04T19:00:20.445Z",
+            "updatedAt": "2026-11-04T19:00:20.445Z"
           }
         }
       }
