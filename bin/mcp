@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+
+UNY_MCP_PROJECT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
+export UNY_MCP_PROJECT_DIR
+export PM2_HOME="$UNY_MCP_PROJECT_DIR/.local/mcp-compose/pm2"
+export PATH="$HOME/.local/bin:$PATH"
+
+cd "$UNY_MCP_PROJECT_DIR"
+exec node "$UNY_MCP_PROJECT_DIR/node_modules/mcp-compose/dist/bin/mcp-compose.js" \
+  --config "$UNY_MCP_PROJECT_DIR/mcp-compose.json" "$@"
