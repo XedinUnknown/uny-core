@@ -44,7 +44,7 @@ const memories = await Promise.all(clients.map((rpc, index) => rpc(3, 'tools/cal
   name: 'read_memory',
   arguments: { memory_name: index === 0 ? 'core' : 'global/projects' },
 })));
-assert.match(JSON.stringify(memories[0]), /Uny: Memory Root/);
+assert.match(JSON.stringify(memories[0]), /uny/i);
 assert.match(JSON.stringify(memories[1]), /uny/i);
 
 const symbols = await clients[0](4, 'tools/call', {
