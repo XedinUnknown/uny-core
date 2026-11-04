@@ -16,7 +16,8 @@
   "files": ["dist", "bin"],
   "scripts": {
     "build": "tsup src/bin/uny.ts src/main.ts src/flags.ts src/providers.ts src/loader.ts src/commands/inspect.ts --format esm --dts --splitting false",
-    "test": "node --import tsx --test tests/loader.test.ts tests/cli.inspect.test.ts"
+    "test": "node --import tsx --test tests/loader.test.ts tests/cli.inspect.test.ts",
+    "spec:validate": "OPENSPEC_TELEMETRY=0 pnpm exec openspec validate --all --strict"
   },
   "dependencies": {
     "@uny/core": "workspace:*",
