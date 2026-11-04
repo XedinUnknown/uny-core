@@ -7,8 +7,8 @@ This root directory provides the tool-skill generation target that populates
 
 This directory:
 
-- [Root entrypoint](specs/root-entrypoint/spec.md): `bin/uny.ts` — module selection,
-  bootstrap, and placeholder completion behavior.
+- [Root entrypoint](specs/root-entrypoint/spec.md): `bin/uny.ts` — bootstrap from core
+  and project configuration, placeholder completion behavior.
 
 Capability specs for packages live alongside their packages:
 

@@ -1,7 +1,7 @@
 # Baseline Review: Evidence and Implementation Notes
 
 This document preserves source-level observations, test-coverage gaps, baseline quirks, and historical
-context gathered during the implementation-first baseline review. It accompanies the four capability
+context gathered during the implementation-first baseline review. It accompanies the five capability
 specs but does not form part of their normative requirements.
 
 The reviewed commit is [`5c0e1b5`](https://github.com/XedinUnknown/uny-core/tree/5c0e1b5). This setup
@@ -350,3 +350,53 @@ recognizes `--help` before loading configuration. It tries only `uny.config.js`,
 import failures and unsupported exports, and registers a plain provider as `user-config` by mutating
 its input map. It does not add verbosity or output-format settings. These differences are historical
 limitations, not requirements for the package CLI.
+
+---
+
+## Root Entrypoint
+
+### Evidence
+
+- Source: [root script](https://github.com/XedinUnknown/uny-core/blob/5c0e1b5/bin/uny.ts)
+
+### Not Runnable as Committed
+
+The root script `bin/uny.ts` imports `@uny/di` and `@uny/core` as workspace packages.
+These packages are declared in `packages/` but are not listed in the root `package.json`
+`dependencies` or `devDependencies`. As a result, running the script from the repository
+root fails at import resolution before any application code executes.
+
+The exact command `docker compose --env-file .env.example run --rm dev pnpm exec tsx bin/uny.ts --help`
+was probed. The observed failure (exit status 1) was:
+
+```
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package '@uny/di' imported from /workspace/bin/uny.ts
+```
+
+The root `package.json` does not declare workspace package dependencies. No build or
+installation step is required to reproduce this failure; it appears at module resolution
+before bootstrap begins.
+
+Requirements in the root-entrypoint spec are therefore **source-derived only**: they
+describe behavior as written in `bin/uny.ts` and are not verified by running the committed
+command. The reviewer explicitly accepts this classification. All root-entrypoint scenarios
+carry an explicit GIVEN clause stating that the execution environment supplies workspace
+dependencies and TypeScript execution.
+
+### Source Observations: Config Acceptance Shape Check
+
+`bin/uny.ts`'s `loadTransform` function (lines 60–64) accepts a plain-provider object
+only when the default export is a truthy object that has a `'definitions'` property
+(`'definitions' in transform`). An object that has an `extensions` property but no
+`definitions` property is not matched and falls through to the `null` return, making it
+indistinguishable from an unsupported export. It is silently ignored. This behavior
+differs from `@uny/cli`'s loader (`isProvider` in `loader.ts`), which accepts either
+`definitions` or `extensions`.
+
+Registration of an accepted plain provider is performed by calling `providers.set('user-config', transform)`
+on the working map that was passed into the outer closure. This mutates the caller's map
+directly rather than returning a copy.
+
+### Coverage Notes
+
+All root-entrypoint requirements are source-derived. No tests exist for `bin/uny.ts`.
