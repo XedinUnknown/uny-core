@@ -72,7 +72,7 @@ Tooling tests (`tests/*.test.*`) use `node --test` with no build step and run di
 
 ## Serena MCP Server
 
-[Serena](https://github.com/oraios/serena) provides semantic code retrieval, editing, and project memories. Claude Code and Codex share an instance pinned to this checkout, managed by [MCP Compose](https://github.com/unsafe9/mcp-compose). OpenCode retains its independent local stdio configuration in `opencode.json` pending integration.
+[Serena](https://github.com/oraios/serena) provides semantic code retrieval, editing, and project memories. Claude Code and Codex share an instance pinned to this checkout, managed by [MCP Compose](https://github.com/unsafe9/mcp-compose). OpenCode retains its existing independent stdio integration in `opencode.json`.
 
 Install [uv](https://docs.astral.sh/uv/) on the host. `uvx` runs Serena directly, so no separate Serena installation is required.
 

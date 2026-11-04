@@ -12,10 +12,10 @@ Agent-only notes:
 - When implementation does begin, preserve the plan's test-first requirement and config-based modularity constraints.
 - Use the `Dhii/containers` `0.3.x` config-based modularity skill as the canonical source when available.
 - Restart OpenCode after changes to `opencode.json`, `.agents/`, or `.opencode/` files.
-- Claude Code and Codex share a project-pinned Serena managed by `sh bin/mcp`; always use this launcher so MCP Compose uses this checkout's isolated PM2 daemon and project-scoped client configuration. OpenCode retains its separate stdio integration. There is no Docker Compose `serena` service.
+- Claude Code and Codex share a project-pinned Serena managed by `sh bin/mcp`; always use this launcher so MCP Compose uses this checkout's isolated PM2 daemon and project-scoped client configuration. OpenCode retains its existing independent stdio integration in `opencode.json`.
 - Serena MCP calls should go through the MCP tool interface, not the `serena` CLI, so results reflect the actual connected server rather than a separately-invoked process that may target a different data directory.
-- `mcp-compose.json` declares the Claude/Codex MCP servers. Serena must start with this checkout's absolute project path and project switching disabled; do not turn it into a multi-project shared server. Shared project/global memory edits still need coordination to avoid lost updates.
-- `mcp_compose.toml` has been replaced by `mcp-compose.json`; do not recreate the TOML file.
+- `mcp-compose.json` declares the Claude Code and Codex MCP servers. Serena must start with this checkout's absolute project path and project switching disabled; do not turn it into a multi-project shared server. Shared project/global memory edits still need coordination to avoid lost updates.
+- `mcp_compose.toml` has been replaced by `mcp-compose.json`; do not recreate the TOML file. There is no Docker Compose `serena` service.
 
 ## Package Structure
 
