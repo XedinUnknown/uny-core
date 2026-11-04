@@ -57,17 +57,29 @@ Tests use `node:test` with tsx loader and run against compiled `dist/` output. T
 
 ## Serena MCP Server
 
-[Serena](https://github.com/oraios/serena) provides semantic code retrieval and editing tools to AI agents via MCP. Each client starts it directly as an on-demand local stdio process via `uvx` — no Docker container and no persistent shared server.
+[Serena](https://github.com/oraios/serena) provides semantic code retrieval, editing, and project memories. Claude Code and Codex share an instance pinned to this checkout, managed by [MCP Compose](https://github.com/unsafe9/mcp-compose). OpenCode retains its independent local stdio configuration in `opencode.json` pending integration.
 
 Install [uv](https://docs.astral.sh/uv/) on the host. `uvx` runs Serena directly, so no separate Serena installation is required.
 
-OpenCode is configured in `opencode.json`. Restart OpenCode after changing that configuration. Other clients should use their own local stdio MCP configuration with this command and arguments:
+After installing project dependencies, run MCP management on the host (not in the development container), where the clients, IDE, and global memories live. Node.js 22+ and `uvx` must be available:
 
-```text
-$HOME/.local/bin/uvx -p 3.13 --from git+https://github.com/oraios/serena serena start-mcp-server --context=ide --open-web-dashboard=false --project-from-cwd
+```bash
+sh bin/mcp up
+sh bin/mcp status
+node bin/mcp-check.mjs
+sh bin/mcp logs serena
+sh bin/mcp down
 ```
 
-There is no `serena` Docker Compose service in this project. `mcp-compose` is not used for Serena because it creates persistent shared gateways. A shared/background Serena server risks stale or cross-session state (a different client can silently switch its active project or write to a location this project doesn't control).
+Always use `sh bin/mcp`, including for shutdown. It supplies an absolute project path and isolates PM2 under `.local/mcp-compose/pm2`; plain MCP Compose commands can otherwise share process management with other projects. The explicit config path also avoids picking up a user-level Compose declaration.
+
+`mcp-compose.json` syncs generated connections only to this checkout's `.mcp.json` (Claude Code) and `.codex/config.toml` (Codex). These machine-specific files and process state are ignored by Git. Approve the project MCP configuration in Claude and trust the project in Codex, then restart those clients. No user-level client configuration is targeted. MCP Compose still keeps its own sync ownership ledger under `~/.mcp-compose`; do not run simultaneous sync commands for different projects.
+
+Serena starts with an explicit project and the single-project `ide` context, which disables project switching. Its upstream revision is pinned in the declaration. Verify `activate_project` is absent if overriding the built-in context locally. Each repository needs its own instance; do not share this endpoint with other projects. Project memories remain in `.serena/memories`; global memories use the existing Serena home and filesystem links (on this machine, `~/.serena/memories/global` resolves to `~/.agents/memories/global`). No separate global-memory server is required. Concurrent edits to the same project or global memory can still overwrite each other and must be coordinated.
+
+MCP Compose `0.7.0` has a pnpm patch to assign unique backend request IDs for shared stdio transports, including newer-protocol servers. Without it, simultaneous clients reusing a request ID can hang. `node bin/mcp-check.mjs` exercises that regression, verifies project switching is absent, reads existing project/global memories, and resolves a TypeScript symbol. After dependency or patch changes, use `down` then `up` to recreate gateway processes with the current installed package.
+
+The JetBrains SSE endpoint is proxied for Codex compatibility; the IDE must serve it at `127.0.0.1:64342`. There is no Docker Compose MCP service. Restart OpenCode after changing its separate configuration.
 
 ## AI Tooling
 
@@ -77,7 +89,7 @@ Phase 0 AI tooling configuration is included for agent-driven implementation:
 - `agents-lock.json` pins skill and agent sources; generated copies are ignored by Git.
 - `.agents/agents/` contains hand-written canonical agent definitions in a portable frontmatter format. agents-config distributes them to each harness through the configured targets.
 - `opencode.json` configures OpenCode permissions and Serena MCP. It also declares a `plan` agent permission guard (edit denied). Model selection and the `build` and `code` agent definitions are provided by each client's own configuration, not this file.
-- `mcp-compose.json` remains available for non-Serena MCP gateways.
+- `mcp-compose.json` declares the project-pinned Serena and JetBrains gateways for Claude Code and Codex.
 
 Install configured agent dependencies from the dev container:
 
