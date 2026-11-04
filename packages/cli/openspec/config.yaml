@@ -1,0 +1,18 @@
+schema: spec-driven
+
+context: |
+  Uny is an exploration-first natural-language instruction runner whose first target is
+  mobile app testing through Appium and WebDriverIO. It is built around config-based
+  provider modularity: providers contribute keyed lazy definitions and extensions, and a
+  composed container is the runtime source of truth.
+
+  The `@uny/cli` specs describe the current scope of the CLI foundation: the `uny` binary
+  entry point, project configuration loading and provider composition, and the `inspect`
+  command. These are living capability requirements derived from the committed implementation
+  at the baseline commit.
+  Preserve the implementation-first baseline distinction: plans, memories, and design
+  documents are not requirement sources. Propose future behaviour explicitly as changes rather
+  than silently expanding the baseline.
+
+  Historical evidence links, coverage notes, and quirks are in
+  docs/openspec-baseline-review.md at the repository root.

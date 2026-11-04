@@ -13,7 +13,8 @@
   "files": ["dist"],
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts",
-    "test": "node --import tsx --test tests/core.test.ts"
+    "test": "node --import tsx --test tests/core.test.ts",
+    "spec:validate": "OPENSPEC_TELEMETRY=0 pnpm exec openspec validate --all --strict"
   },
   "dependencies": {
     "@uny/di": "workspace:*"
