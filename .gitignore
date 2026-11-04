@@ -9,6 +9,4 @@ output/
 .nx/
 .idea/
 .local/mcp-compose/
-.mcp.json
-.codex/config.toml
 /.config/openspec/

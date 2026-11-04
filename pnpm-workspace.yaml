@@ -1,5 +1,2 @@
 packages:
   - packages/*
-
-patchedDependencies:
-  mcp-compose@0.7.0: patches/mcp-compose@0.7.0.patch

@@ -46,7 +46,7 @@ Some AI tooling (Serena MCP) runs on the host, outside Docker. Verify host prere
 make check-host
 ```
 
-This checks that `uvx` (from [uv](https://docs.astral.sh/uv/)) is present and executable at `$HOME/.local/bin/uvx`. It does not invoke any server or install any software. JetBrains MCP availability is optional and not checked. Run this from the host, not inside the Docker container.
+This checks that `uvx` (from [uv](https://docs.astral.sh/uv/)) is present and executable at `$HOME/.local/bin/uvx`, and that `node` is available. It does not invoke any server or install any software. JetBrains MCP availability is optional and not checked. Run this from the host, not inside the Docker container.
 
 ## Build and Test
 
@@ -57,7 +57,7 @@ pnpm build
 # Build only changed packages
 pnpm build:changed
 
-# Run tooling tests (agent definitions, MCP projection)
+# Run tooling tests (agent definitions)
 pnpm test:tooling
 
 # Run all package tests (builds first via Nx dependency)
@@ -72,29 +72,33 @@ Tooling tests (`tests/*.test.*`) use `node --test` with no build step and run di
 
 ## Serena MCP Server
 
-[Serena](https://github.com/oraios/serena) provides semantic code retrieval, editing, and project memories. Claude Code and Codex share an instance pinned to this checkout, managed by [MCP Compose](https://github.com/unsafe9/mcp-compose). OpenCode retains its existing independent stdio integration in `opencode.json`.
+[Serena](https://github.com/oraios/serena) provides semantic code retrieval, editing, and project memories. Claude Code, Codex, and OpenCode connect to a single project facade managed by [Datalayer MCP Compose](https://github.com/datalayer/mcp-compose), the Python package `mcp-compose==0.1.13`, not the npm package of the same name. Backend declarations live in `mcp_compose.toml`; tools are exposed with `serena_` and `jetbrains_` prefixes.
 
-Install [uv](https://docs.astral.sh/uv/) on the host. `uvx` runs Serena directly, so no separate Serena installation is required.
+Install [uv](https://docs.astral.sh/uv/) on the host. `uvx` runs both MCP Compose and Serena directly, so no separate installation is required. Node.js must also be available on the host to run `bin/mcp-check.mjs`.
 
-After installing project dependencies, run MCP management on the host (not in the development container), where the clients, IDE, and global memories live. Node.js 22+ and `uvx` must be available:
+Run MCP management on the host (not in the development container), where the clients, IDE, and global memories live:
 
 ```bash
-sh bin/mcp up
-sh bin/mcp status
+# Start the gateway (foreground — runs until Ctrl-C)
+sh bin/mcp
+
+# In a second terminal: verify the endpoint and Serena wiring
 node bin/mcp-check.mjs
-sh bin/mcp logs serena
-sh bin/mcp down
 ```
 
-Always use `sh bin/mcp`, including for shutdown. It supplies an absolute project path and isolates PM2 under `.local/mcp-compose/pm2`; plain MCP Compose commands can otherwise share process management with other projects. The explicit config path also avoids picking up a user-level Compose declaration.
+`sh bin/mcp` starts `mcp-compose serve` in the foreground using `uvx`. Stop it with Ctrl-C. There are no `up`, `down`, `status`, or `logs` subcommands.
 
-`mcp-compose.json` syncs generated connections only to this checkout's `.mcp.json` (Claude Code) and `.codex/config.toml` (Codex). These machine-specific files and process state are ignored by Git. Approve the project MCP configuration in Claude and trust the project in Codex, then restart those clients. No user-level client configuration is targeted. MCP Compose still keeps its own sync ownership ledger under `~/.mcp-compose`; do not run simultaneous sync commands for different projects.
+`.mcp.json` (Claude Code), `.codex/config.toml` (Codex), and `opencode.json` (OpenCode) are committed to the repository and each point to the single `uny` endpoint at `http://127.0.0.1:19100/mcp`. They are not generated or written by MCP Compose and require no user-level configuration. Approve the project MCP configuration in Claude and trust the project in Codex, then restart those clients.
 
-Serena starts with an explicit project and the single-project `ide` context, which disables project switching. Its upstream revision is pinned in the declaration. Verify `activate_project` is absent if overriding the built-in context locally. Each repository needs its own instance; do not share this endpoint with other projects. Project memories remain in `.serena/memories`; global memories use the existing Serena home and filesystem links (on this machine, `~/.serena/memories/global` resolves to `~/.agents/memories/global`). No separate global-memory server is required. Concurrent edits to the same project or global memory can still overwrite each other and must be coordinated.
+Serena starts with an explicit project and the single-project `ide` context, which disables project switching. Its upstream revision is pinned in `mcp_compose.toml`. Verify `activate_project` is absent if overriding the built-in context locally. Each repository needs its own instance; do not share this endpoint with other projects. Project memories remain in `.serena/memories`; global memories use the existing Serena home and filesystem links (on this machine, `~/.serena/memories/global` resolves to `~/.agents/memories/global`). No separate global-memory server is required. Concurrent edits to the same project or global memory can still overwrite each other and must be coordinated.
 
-MCP Compose `0.7.0` has a pnpm patch to assign unique backend request IDs for shared stdio transports, including newer-protocol servers. Without it, simultaneous clients reusing a request ID can hang. `node bin/mcp-check.mjs` exercises that regression, verifies project switching is absent, reads existing project/global memories, and resolves a TypeScript symbol. After dependency or patch changes, use `down` then `up` to recreate gateway processes with the current installed package.
+`node bin/mcp-check.mjs` verifies project switching is absent, reads existing project/global memories, and resolves a TypeScript symbol.
 
-The JetBrains SSE endpoint is proxied for Codex compatibility; the IDE must serve it at `127.0.0.1:64342`. There is no Docker Compose MCP service. Restart OpenCode after changing its separate configuration.
+**Known limitation:** Overlapping calls to the same stdio backend reproduced a `readuntil() called while another coroutine is already waiting for incoming data` error in the unmodified package. This can occur within one harness session or across sessions. Sequential calls work; no concurrency patch is applied here.
+
+The endpoint uses a fixed port. If it is occupied, stop the conflicting project service or change the port in `bin/mcp`, `mcp_compose.toml`, and all three native client configurations together. Do not connect another checkout to an instance pinned to this checkout.
+
+The JetBrains SSE endpoint is proxied for Codex compatibility; the IDE must be running and serving at `127.0.0.1:64342` for discovery to succeed. JetBrains support is optional — if the IDE is absent at startup, restart the gateway with the IDE running to pick up its tools. There is no Docker Compose MCP service. Restart OpenCode after changing its separate configuration.
 
 ## AI Tooling
 
