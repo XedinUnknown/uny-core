@@ -20,7 +20,7 @@ docker compose build dev
 docker compose run --rm dev make setup
 ```
 
-`make setup` installs dependencies, agent skills, and generates MCP projection files (`opencode.json` and `.mcp.json`). It does not check host prerequisites — run `make check-host` from the host separately if needed.
+`make setup` installs dependencies, generates OpenSpec skills, and installs agent integrations. It does not check host prerequisites — run `make check-host` from the host separately if needed.
 
 See the [Makefile](Makefile) for development targets. Run them inside the container,
 or directly where Make, Node.js, and pnpm are available. Restart OpenCode after
