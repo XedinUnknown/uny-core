@@ -17,6 +17,7 @@
     "@types/node": "^26.0.0",
     "@xedinunknown/agents-config": "github:XedinUnknown/agents-config#0.1.x",
     "lerna": "^9.0.7",
+    "mcp-compose": "0.7.0",
     "nx": "^23.0.0",
     "tsup": "^8.5.1",
     "tsx": "^4.22.4",
