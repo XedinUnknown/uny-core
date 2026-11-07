@@ -177,6 +177,33 @@ describe("composition library (@uny/di)", () => {
       const c = new DelegatingContainer(provider);
       assert.deepStrictEqual(c.keys(), ["a", "b", "c"]);
     });
+
+    it("does not treat Object.prototype members as keys", () => {
+      const provider = composeProviders(
+        new Map([["p", { definitions: { k: () => "v" } }]])
+      );
+      const c = new DelegatingContainer(provider);
+      for (const key of ["toString", "constructor", "hasOwnProperty"]) {
+        assert.strictEqual(c.has(key), false, key);
+        assert.throws(() => c.resolve(key), MissingKeyError, key);
+      }
+    });
+
+    it("does not treat Object.prototype members as keys when records are omitted", () => {
+      const c = new DelegatingContainer({});
+      assert.strictEqual(c.has("toString"), false);
+      assert.throws(() => c.resolve("toString"), MissingKeyError);
+    });
+
+    it("ignores inherited definitions and extensions", () => {
+      const definitions = Object.create({ inherited: () => "inherited-value" });
+      const extensions = Object.create({ inheritedExt: () => "ext-value" });
+      const c = new DelegatingContainer({ definitions, extensions });
+      assert.strictEqual(c.has("inherited"), false);
+      assert.strictEqual(c.has("inheritedExt"), false);
+      assert.throws(() => c.resolve("inherited"), MissingKeyError);
+      assert.throws(() => c.resolve("inheritedExt"), MissingKeyError);
+    });
   });
 
   // ── CachingContainer ────────────────────────────────────────────────────
@@ -580,6 +607,24 @@ describe("composition library (@uny/di)", () => {
         );
         assert.strictEqual(c.resolve<Num>("inst").n, 99);
       });
+    });
+  });
+
+  // ── Inherited keys ──────────────────────────────────────────────────────
+
+  describe("inherited keys", () => {
+    it("composition does not chain an extension onto an inherited member", () => {
+      const p: Provider = { extensions: { toString: (prev) => prev ?? "own" } };
+      const provider = composeProviders(new Map([["p", p]]));
+      const c = new DelegatingContainer(provider);
+      assert.strictEqual(c.resolve("toString"), "own");
+    });
+
+    it("bootstrap reports Object.prototype member names as missing", () => {
+      const app = bootstrap(new Map([["p", { definitions: { k: () => "v" } }]]));
+      assert.strictEqual(app.has("constructor"), false);
+      assert.throws(() => app.resolve("toString"), MissingKeyError);
+      assert.throws(() => app.resolve("constructor"), MissingKeyError);
     });
   });
 
