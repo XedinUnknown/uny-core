@@ -4,7 +4,7 @@ Read `README.md` first. It is the shared source for project status and human-fac
 
 Agent-only notes:
 
-- Read `.opencode/plans/architecture.md` and `.opencode/plans/implementation-plan.md` before creating or changing project files; they are the design and delivery sources of truth until implementation supersedes planned behavior.
+- OpenSpec specs (`packages/*/openspec/specs/`) are the source of requirements; code and specs must agree. `.opencode/plans/architecture.md`, `.opencode/plans/implementation-plan.md`, and `packages/di/README.md` are design input not yet integrated into OpenSpec; read them for intent and future direction, but propose any behavior they describe as an OpenSpec change rather than treating it as a requirement.
 - Treat the instruction runner, persistent hosts, sessions, and device adapters as not started. DI/core and the initial CLI/config/inspect foundation already exist.
 - Use the documented Docker Compose setup commands only; do not infer missing test, lint, or runner commands.
 - Keep documentation and scaffolding changes minimal unless explicitly requested.
@@ -22,7 +22,7 @@ Agent-only notes:
 
 DI library with barrel-based source structure:
 
-- `README.md` — intended DI contract under design review; implementation must be reconciled before WORK-2 is accepted
+- `README.md` — intended DI design, not yet integrated into OpenSpec; current requirements are in `openspec/specs/`
 - `src/index.ts` — barrel re-exports only
 - `src/types.ts` — Definition, Extension, Provider, Container, and current provenance types
 - `src/compose.ts` — composeProviders()
