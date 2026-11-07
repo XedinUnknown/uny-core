@@ -8,3 +8,5 @@ output/
 !.env.example
 .nx/
 .idea/
+.local/mcp-compose/
+/.config/openspec/

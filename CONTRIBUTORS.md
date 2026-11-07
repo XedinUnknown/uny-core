@@ -20,6 +20,8 @@ docker compose build dev
 docker compose run --rm dev make setup
 ```
 
+`make setup` installs dependencies, generates OpenSpec skills, and installs agent integrations. It does not check host prerequisites — run `make check-host` from the host separately if needed.
+
 See the [Makefile](Makefile) for development targets. Run them inside the container,
 or directly where Make, Node.js, and pnpm are available. Restart OpenCode after
 setup installs or refreshes agent integrations.
@@ -36,6 +38,16 @@ docker compose logs -f dev
 docker compose down
 ```
 
+## Host Prerequisites
+
+Some AI tooling (Serena MCP) runs on the host, outside Docker. Verify host prerequisites before working with AI tooling:
+
+```bash
+make check-host
+```
+
+This checks that `uvx` (from [uv](https://docs.astral.sh/uv/)) is present and executable at `$HOME/.local/bin/uvx`, and that `node` is available. It does not invoke any server or install any software. JetBrains MCP availability is optional and not checked. Run this from the host, not inside the Docker container.
+
 ## Build and Test
 
 ```bash
@@ -45,7 +57,10 @@ pnpm build
 # Build only changed packages
 pnpm build:changed
 
-# Run all tests (builds first via Nx dependency)
+# Run tooling tests (agent definitions)
+pnpm test:tooling
+
+# Run all package tests (builds first via Nx dependency)
 pnpm test
 
 # Run tests for a specific package
@@ -53,21 +68,37 @@ cd packages/di && pnpm test
 cd packages/core && pnpm test
 ```
 
-Tests use `node:test` with tsx loader and run against compiled `dist/` output. The build step is automatically triggered by Nx before tests.
+Tooling tests (`tests/*.test.*`) use `node --test` with no build step and run directly against source files. Package tests use `node:test` with tsx loader and run against compiled `dist/` output; the build step is automatically triggered by Nx before tests.
 
 ## Serena MCP Server
 
-[Serena](https://github.com/oraios/serena) provides semantic code retrieval and editing tools to AI agents via MCP. Each client starts it directly as an on-demand local stdio process via `uvx` — no Docker container and no persistent shared server.
+[Serena](https://github.com/oraios/serena) provides semantic code retrieval, editing, and project memories. Claude Code, Codex, and OpenCode connect to a single project facade managed by [Datalayer MCP Compose](https://github.com/datalayer/mcp-compose), the Python package `mcp-compose==0.1.13`, not the npm package of the same name. Backend declarations live in `mcp_compose.toml`; tools are exposed with `serena_` and `jetbrains_` prefixes.
 
-Install [uv](https://docs.astral.sh/uv/) on the host. `uvx` runs Serena directly, so no separate Serena installation is required.
+Install [uv](https://docs.astral.sh/uv/) on the host. `uvx` runs both MCP Compose and Serena directly, so no separate installation is required. Node.js must also be available on the host to run `bin/mcp-check.mjs`.
 
-OpenCode is configured in `opencode.json`. Restart OpenCode after changing that configuration. Other clients should use their own local stdio MCP configuration with this command and arguments:
+Run MCP management on the host (not in the development container), where the clients, IDE, and global memories live:
 
-```text
-$HOME/.local/bin/uvx -p 3.13 --from git+https://github.com/oraios/serena serena start-mcp-server --context=ide --open-web-dashboard=false --project-from-cwd
+```bash
+# Start the gateway (foreground — runs until Ctrl-C)
+sh bin/mcp
+
+# In a second terminal: verify the endpoint and Serena wiring
+node bin/mcp-check.mjs
 ```
 
-There is no `serena` Docker Compose service in this project. `mcp-compose` is not used for Serena because it creates persistent shared gateways. A shared/background Serena server risks stale or cross-session state (a different client can silently switch its active project or write to a location this project doesn't control).
+`sh bin/mcp` starts `mcp-compose serve` in the foreground using `uvx`. Stop it with Ctrl-C. There are no `up`, `down`, `status`, or `logs` subcommands.
+
+`.mcp.json` (Claude Code), `.codex/config.toml` (Codex), and `opencode.json` (OpenCode) are committed to the repository and each point to the single `uny` endpoint at `http://127.0.0.1:19100/mcp`. They are not generated or written by MCP Compose and require no user-level configuration. Approve the project MCP configuration in Claude and trust the project in Codex, then restart those clients.
+
+Serena starts with an explicit project and the single-project `ide` context, which disables project switching. Its upstream revision is pinned in `mcp_compose.toml`. Verify `activate_project` is absent if overriding the built-in context locally. Each repository needs its own instance; do not share this endpoint with other projects. Project memories remain in `.serena/memories`; global memories use the existing Serena home and filesystem links (on this machine, `~/.serena/memories/global` resolves to `~/.agents/memories/global`). No separate global-memory server is required. Concurrent edits to the same project or global memory can still overwrite each other and must be coordinated.
+
+`node bin/mcp-check.mjs` verifies project switching is absent, reads existing project/global memories, and resolves a TypeScript symbol.
+
+**Known limitation:** Overlapping calls to the same stdio backend reproduced a `readuntil() called while another coroutine is already waiting for incoming data` error in the unmodified package. This can occur within one harness session or across sessions. Sequential calls work; no concurrency patch is applied here.
+
+The endpoint uses a fixed port. If it is occupied, stop the conflicting project service or change the port in `bin/mcp`, `mcp_compose.toml`, and all three native client configurations together. Do not connect another checkout to an instance pinned to this checkout.
+
+The JetBrains SSE endpoint is proxied for Codex compatibility; the IDE must be running and serving at `127.0.0.1:64342` for discovery to succeed. JetBrains support is optional — if the IDE is absent at startup, restart the gateway with the IDE running to pick up its tools. There is no Docker Compose MCP service. Restart OpenCode after changing its separate configuration.
 
 ## AI Tooling
 
@@ -128,11 +159,23 @@ the generated skills. Restart OpenCode after setup installs or refreshes integra
 
 Phase 0 AI tooling configuration is included for agent-driven implementation:
 
-- `agents.yaml` declares the config-based modularity skill dependency and the project's [agents-config](https://github.com/XedinUnknown/agents-config) installation settings. Skills are copied into `.agents/skills`, which OpenCode reads directly.
-- `agents-lock.json` pins skill sources; generated skill copies are ignored by Git.
-- `opencode.json` configures OpenCode permissions, `plan`, `build`, and `code` agents, and the Serena MCP server.
-- `.agents/` contains agentloom canonical agent definitions.
-- `mcp-compose.json` remains available for non-Serena MCP gateways.
+- `agents.yaml` declares the config-based modularity skill dependency and the project's [agents-config](https://github.com/XedinUnknown/agents-config) installation settings. Skills are copied into `.agents/skills`, which OpenCode and Codex read directly. The `claude-interop` and `opencode-interop` targets link each skill from the shared `.agents/` directory into the per-harness locations Claude Code and OpenCode expect.
+- `agents-lock.json` pins skill and agent sources; generated copies are ignored by Git.
+- `.agents/agents/` contains hand-written canonical agent definitions in a portable frontmatter format. agents-config distributes them to each harness through the configured targets.
+- `opencode.json` configures OpenCode permissions and Serena MCP. It also declares a `plan` agent permission guard (edit denied). Model selection and the `build` and `code` agent definitions are provided by each client's own configuration, not this file.
+- `mcp-compose.json` declares the project-pinned Serena and JetBrains gateways for Claude Code and Codex.
+
+Install configured agent dependencies from the dev container:
+
+```bash
+docker compose run --rm dev pnpm exec agents-config install
+```
+
+Or directly where `pnpm` and Node.js are available:
+
+```bash
+pnpm exec agents-config install
+```
 
 Agent dependencies are installed by `make setup`, which runs `agents-config install`.
 `install` respects the pinned revisions in `agents-lock.json` and refuses to continue
@@ -146,4 +189,18 @@ to reflect the new declarations, then installs the resolved sources. Commit both
 `agents.yaml` and the updated `agents-lock.json` together so that all consumers see a
 consistent manifest-and-lock pair. Consumers rerun `make setup` after pulling committed
 changes to reinstall from the new lock. Restart OpenCode after setup installs or updates
-skills.
+agent integrations.
+
+## Agent Wiring Tests
+
+`tests/agents.test.js` validates that agent definitions and config wiring are consistent. Run it directly with Node.js (no build step required):
+
+```bash
+node --test tests/agents.test.js
+```
+
+Or from the dev container:
+
+```bash
+docker compose run --rm dev node --test tests/agents.test.js
+```

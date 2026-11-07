@@ -2,28 +2,9 @@
   "$schema": "https://opencode.ai/config.json",
   "instructions": ["AGENTS.md"],
   "mcp": {
-    "serena": {
-      "type": "local",
-      "command": [
-        "uvx",
-        "-p",
-        "3.13",
-        "--from",
-        "git+https://github.com/oraios/serena",
-        "serena",
-        "start-mcp-server",
-        "--context=ide",
-        "--open-web-dashboard=false",
-        "--project-from-cwd"
-      ],
-      "environment": {
-        "PATH": "{env:HOME}/.local/bin:{env:PATH}",
-        "BROWSER": "/bin/true"
-      }
-    },
-    "jetbrains": {
+    "uny": {
       "type": "remote",
-      "url": "http://127.0.0.1:64342/sse"
+      "url": "http://127.0.0.1:19100/mcp"
     }
   },
   "permission": {
@@ -61,6 +42,13 @@
       "git reset --hard*": "ask",
       "rm -rf*": "ask",
       "docker system prune*": "ask"
+    }
+  },
+  "agent": {
+    "plan": {
+      "permission": {
+        "edit": "deny"
+      }
     }
   }
 }

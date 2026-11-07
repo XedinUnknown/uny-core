@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+
+PROJECT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
+exec "$HOME/.local/bin/uvx" --from 'mcp-compose==0.1.13' mcp-compose serve \
+  --config "$PROJECT_DIR/mcp_compose.toml" \
+  --host 127.0.0.1 --port 19100 --transport streamable-http "$@"
