@@ -53,7 +53,7 @@ async function loadAndValidate(filePath: string): Promise<Transform> {
     throw new Error(`Failed to import ${filePath}: ${e.message}`);
   }
 
-  const exp: UserModule | undefined = mod.default ?? mod.provider;
+  const exp: UserModule | undefined = mod.default;
   if (!exp) {
     throw new Error(`${filePath} must export default a Provider or a transform function`);
   }

@@ -144,14 +144,22 @@ entries and order authoritative.
 
 ### Requirement: Reject invalid project configuration
 
-The CLI SHALL reject configuration that does not export an accepted provider or configuration function.
-Its diagnostic SHALL identify the configuration file and the accepted kinds of export.
+The CLI SHALL reject configuration whose default export is not an accepted provider or configuration
+function. Named exports SHALL NOT be used as configuration. Its diagnostic SHALL identify the
+configuration file and the accepted kinds of export.
 
 #### Scenario: Reject a number as configuration
 
 - **GIVEN** `uny.config.js` default-exports `42`
 - **WHEN** the user runs `uny inspect`
 - **THEN** the CLI reports that the file must export a provider or function and exits unsuccessfully
+
+#### Scenario: Reject a named provider export
+
+- **GIVEN** `uny.config.js` has no default export and a named export `provider` containing definitions
+- **WHEN** the CLI loads project configuration
+- **THEN** it reports that the file must export default a provider or function, rather than using the
+  named export
 
 ### Requirement: Retain required application configuration
 
