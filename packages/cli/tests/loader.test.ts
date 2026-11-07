@@ -47,6 +47,13 @@ describe('loadTransform', () => {
     }
   });
 
+  it('rejects a named provider export without a default export', async () => {
+    await assert.rejects(
+      loadTransform(join(fixturesDir, 'named-provider-export')),
+      /must export default a Provider or a transform function/,
+    );
+  });
+
   it('transform returns a map with additions', async () => {
     const transform = await loadTransform(join(fixturesDir, 'has-transform'));
     assert.ok(transform);

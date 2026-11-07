@@ -8,7 +8,16 @@ import { MissingKeyError } from "./errors.js";
 // ── DelegatingContainer ────────────────────────────────────────────────
 
 /**
+ * Returns the record's own property for `key`, ignoring inherited members
+ * such as `Object.prototype.toString`.
+ */
+function own<T>(record: Record<string, T> | undefined, key: string): T | undefined {
+  return record && Object.hasOwn(record, key) ? record[key] : undefined;
+}
+
+/**
  * Resolves keys from a composed provider.
+ * Only own properties of the definition and extension records are keys.
  * Factories receive the parent container (if set) for lookup delegation.
  * Does NOT cache — caching is a separate concern (CachingContainer).
  * Does NOT detect circular deps — use CircularDetector decorator.
@@ -24,8 +33,8 @@ export class DelegatingContainer implements Container {
   }
 
   resolve<T = any>(key: string): T {
-    const def = this.provider.definitions?.[key];
-    const ext = this.provider.extensions?.[key];
+    const def = own(this.provider.definitions, key);
+    const ext = own(this.provider.extensions, key);
 
     if (!def && !ext) {
       const available = Object.keys(this.provider.definitions ?? {});
@@ -44,8 +53,8 @@ export class DelegatingContainer implements Container {
 
   has(key: string): boolean {
     return (
-      key in (this.provider.definitions ?? {}) ||
-      key in (this.provider.extensions ?? {})
+      Object.hasOwn(this.provider.definitions ?? {}, key) ||
+      Object.hasOwn(this.provider.extensions ?? {}, key)
     );
   }
 

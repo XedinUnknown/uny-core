@@ -1,13 +1,30 @@
 # Baseline Review: Evidence and Implementation Notes
 
 This document preserves source-level observations, test-coverage gaps, baseline quirks, and historical
-context gathered during the implementation-first baseline review. It accompanies the five capability
+context gathered during the implementation-first baseline review. It accompanies the four capability
 specs but does not form part of their normative requirements.
 
 The reviewed commit is [`5c0e1b5`](https://github.com/XedinUnknown/uny-core/tree/5c0e1b5). This setup
 was ported from the former `UN1Q-com/uny` OpenSpec exercise; the destination's `packages/` and `bin/`
-contents match the original baseline implementation. The named `provider` export alternative was
-deliberately excluded from requirements; its implementation remains unchanged.
+contents match the original baseline implementation.
+
+## Corrections Since the Baseline
+
+The baseline was later reconciled with the code by changing the code where the observed behavior was
+not wanted:
+
+- `DelegatingContainer` and `composeProviders` consider only own properties of definition and
+  extension records. Inherited properties, including `Object.prototype` members such as `toString` and
+  `constructor`, are no longer keys. Previously, `has()` found such names through a `{}` fallback even
+  when `resolve()` threw for them, and `bootstrap(...).resolve("toString")` returned a string instead
+  of throwing `MissingKeyError`.
+- The CLI loader reads only the default export. The undocumented fallback to a named `provider`
+  export was removed.
+- The duplicate repository-root script `bin/uny.ts` and its root-entrypoint spec were removed. The
+  canonical executable is the `@uny/cli` package binary.
+
+Observations below describe `5c0e1b5` and are kept as historical evidence; where they conflict with
+this section, this section and the specs apply.
 
 ## Process
 
@@ -148,8 +165,8 @@ awaited first. There are no dedicated tests for promise pass-through behavior.
 - Optional enumeration and the complete root error exports are source-derived, not individually tested.
 - Extension-only invocation and unwrapped callback errors are source-derived.
 - Direct parent fallback exclusion is source-derived.
-- Inherited-property behavior and deduplication for `has`/`keys` are source-derived without dedicated
-  assertions.
+- Deduplication for `has`/`keys` is source-derived without dedicated assertions. Own-property lookup
+  is covered by tests added after the baseline.
 - Falsy values, failure retry, promise handling, metadata forwarding, and lack of invalidation in
   `CachingContainer` are source-derived.
 - Constructor injection, replacement, and enumeration for `ProxyContainer` are source-derived.
@@ -165,11 +182,10 @@ awaited first. There are no dedicated tests for promise pass-through behavior.
 
 ### Historical Quirks
 
-- `DelegatingContainer.has` uses JavaScript `in` checks rather than `Object.hasOwn`; it therefore
-  matches inherited properties on definition and extension record objects, which `keys()` (using
-  `Object.keys`) does not enumerate. `resolve` uses property bracket access (`record[key]`), which
-  also traverses the prototype chain: a key visible to `has` via inheritance is also reachable via
-  `resolve`. Both quirks apply symmetrically; `keys()` remains own-enumerable-only regardless.
+- At the baseline, `DelegatingContainer.has` used JavaScript `in` checks and `resolve` used bracket
+  access, so both reached inherited properties. They were not symmetric: with an omitted record, `has`
+  checked a `{}` fallback (matching `Object.prototype` members) while `resolve` threw. Corrected after
+  the baseline; see [Corrections Since the Baseline](#corrections-since-the-baseline).
 - `MissingKeyError` available list is built from `Object.keys(provider.definitions ?? {})`, which
   excludes extension-only keys. The error's available list may therefore omit keys that `has()`
   returns `true` for.
@@ -313,8 +329,9 @@ Provider validation is shallow: a `definitions` or `extensions` property with Ja
 qualifies, including a null-valued property. Missing or falsy exports and unsupported export types use
 different error messages. Configuration functions are called synchronously without additional
 return-shape or asynchronous-result validation ([loader](https://github.com/XedinUnknown/uny-core/blob/5c0e1b5/packages/cli/src/loader.ts),
-[application](https://github.com/XedinUnknown/uny-core/blob/5c0e1b5/packages/cli/src/main.ts#L61-L78)). Alternative named-export syntax is outside
-the requirements; its loader support is unchanged.
+[application](https://github.com/XedinUnknown/uny-core/blob/5c0e1b5/packages/cli/src/main.ts#L61-L78)). The baseline loader also
+accepted a named `provider` export when no default export existed; that fallback was removed after
+the baseline.
 
 A plain provider is registered by copying the input map and setting `user`. An existing `user` entry is
 replaced without changing its position. Likewise, registering `cli-overrides` replaces an existing
@@ -337,66 +354,3 @@ Rows are sorted with `localeCompare`. Table columns expand to fit content, with 
 and 11 characters for the key and defining provider. History entries are not individually validated.
 These formatting and validation details are source-derived, not separately asserted by the process
 tests.
-
-#### Separate Root Script
-
-The repository's `bin/uny.ts` is a separate, unfinished executable, not the package's `uny` command.
-It does not run inspection. After successful startup it prints two placeholder lines beginning
-`Entrypoint not yet implemented` and `Run: node dist/bin/uny.js`
-([root script](https://github.com/XedinUnknown/uny-core/blob/5c0e1b5/bin/uny.ts)).
-
-The root script uses only `UNY_PROJECT_DIR` or the current directory, ignores `--project-dir`, and
-recognizes `--help` before loading configuration. It tries only `uny.config.js`, silently ignores
-import failures and unsupported exports, and registers a plain provider as `user-config` by mutating
-its input map. It does not add verbosity or output-format settings. These differences are historical
-limitations, not requirements for the package CLI.
-
----
-
-## Root Entrypoint
-
-### Evidence
-
-- Source: [root script](https://github.com/XedinUnknown/uny-core/blob/5c0e1b5/bin/uny.ts)
-
-### Not Runnable as Committed
-
-The root script `bin/uny.ts` imports `@uny/di` and `@uny/core` as workspace packages.
-These packages are declared in `packages/` but are not listed in the root `package.json`
-`dependencies` or `devDependencies`. As a result, running the script from the repository
-root fails at import resolution before any application code executes.
-
-The exact command `docker compose --env-file .env.example run --rm dev pnpm exec tsx bin/uny.ts --help`
-was probed. The observed failure (exit status 1) was:
-
-```
-Error [ERR_MODULE_NOT_FOUND]: Cannot find package '@uny/di' imported from /workspace/bin/uny.ts
-```
-
-The root `package.json` does not declare workspace package dependencies. No build or
-installation step is required to reproduce this failure; it appears at module resolution
-before bootstrap begins.
-
-Requirements in the root-entrypoint spec are therefore **source-derived only**: they
-describe behavior as written in `bin/uny.ts` and are not verified by running the committed
-command. The reviewer explicitly accepts this classification. All root-entrypoint scenarios
-carry an explicit GIVEN clause stating that the execution environment supplies workspace
-dependencies and TypeScript execution.
-
-### Source Observations: Config Acceptance Shape Check
-
-`bin/uny.ts`'s `loadTransform` function (lines 60–64) accepts a plain-provider object
-only when the default export is a truthy object that has a `'definitions'` property
-(`'definitions' in transform`). An object that has an `extensions` property but no
-`definitions` property is not matched and falls through to the `null` return, making it
-indistinguishable from an unsupported export. It is silently ignored. This behavior
-differs from `@uny/cli`'s loader (`isProvider` in `loader.ts`), which accepts either
-`definitions` or `extensions`.
-
-Registration of an accepted plain provider is performed by calling `providers.set('user-config', transform)`
-on the working map that was passed into the outer closure. This mutates the caller's map
-directly rather than returning a copy.
-
-### Coverage Notes
-
-All root-entrypoint requirements are source-derived. No tests exist for `bin/uny.ts`.

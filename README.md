@@ -13,9 +13,8 @@ See `.opencode/plans/architecture.md` and `.opencode/plans/implementation-plan.m
 
 ## Capability Specs
 
-OpenSpec capability specs are co-located with their subjects:
+OpenSpec capability specs are the source of requirements and are co-located with their packages:
 
-- [`openspec/`](openspec/README.md) — repository-root entrypoint (`bin/uny.ts`).
 - [`packages/di/openspec/`](packages/di/openspec/README.md) — `@uny/di` composition and containers.
 - [`packages/core/openspec/`](packages/core/openspec/README.md) — `@uny/core` app configuration.
 - [`packages/cli/openspec/`](packages/cli/openspec/README.md) — `@uny/cli` command-line interface.

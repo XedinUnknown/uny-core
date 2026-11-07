@@ -43,7 +43,7 @@ export function composeProviders(
         entry.extendedBy.push(name);
 
         // Chain extensions in order
-        if (composedExts[key]) {
+        if (Object.hasOwn(composedExts, key)) {
           const prev = composedExts[key];
           composedExts[key] = (previous, container) => {
             const result = prev(previous, container);

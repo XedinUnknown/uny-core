@@ -51,8 +51,8 @@ be accepted.
 ### Requirement: Independent ordered extension chains
 
 Composition SHALL retain extensions independently of definition overrides and chain extensions for each
-key in provider iteration order. Each extension SHALL receive the preceding result and the same lookup
-container; the first receives the winning definition's result, or `undefined` for an extension-only
+key in provider iteration order, considering only extensions already contributed under that own key.
+Each extension SHALL receive the preceding result and the same lookup container; the first receives the winning definition's result, or `undefined` for an extension-only
 key. A later definition SHALL not discard extensions contributed by earlier providers.
 
 #### Scenario: Apply extensions to a winning definition

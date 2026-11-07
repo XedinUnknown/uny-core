@@ -1,10 +1,9 @@
 schema: spec-driven
 
 context: |
-  This root OpenSpec directory holds the spec for the repository-root entrypoint
-  (bin/uny.ts) and provides the tool-skill generation target that populates
-  .agents/skills/openspec-*/. Package-level capability specs live in their respective
-  package openspec directories:
+  This root OpenSpec directory is the tool-skill generation target that populates
+  .agents/skills/openspec-*/ and holds no capability specs. Package-level capability
+  specs live in their respective package openspec directories:
 
     packages/di/openspec/     — @uny/di composition and container specs
     packages/core/openspec/   — @uny/core configuration specs

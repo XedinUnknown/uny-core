@@ -22,7 +22,7 @@
             "method": "copy",
             "contentHash": "b4b2ac4990648761fb5e92390088546ab2ffa64b77a532a447b1f0c78ffd267f",
             "installedAt": "2026-11-02T16:50:30.942Z",
-            "updatedAt": "2026-11-03T23:24:53.408Z"
+            "updatedAt": "2026-11-07T04:13:56.198Z"
           }
         }
       }
@@ -41,7 +41,7 @@
             "method": "link",
             "contentHash": "",
             "installedAt": "2026-11-03T23:24:53.413Z",
-            "updatedAt": "2026-11-03T23:24:53.413Z"
+            "updatedAt": "2026-11-07T04:13:56.204Z"
           },
           ".claude/agents/build.md": {
             "kind": "agents",
@@ -49,7 +49,7 @@
             "method": "link",
             "contentHash": "",
             "installedAt": "2026-11-03T23:24:53.413Z",
-            "updatedAt": "2026-11-03T23:24:53.413Z"
+            "updatedAt": "2026-11-07T04:13:56.206Z"
           },
           ".claude/agents/code.md": {
             "kind": "agents",
@@ -57,7 +57,7 @@
             "method": "link",
             "contentHash": "",
             "installedAt": "2026-11-03T23:24:53.414Z",
-            "updatedAt": "2026-11-03T23:24:53.414Z"
+            "updatedAt": "2026-11-07T04:13:56.206Z"
           },
           ".claude/agents/plan.md": {
             "kind": "agents",
@@ -65,7 +65,7 @@
             "method": "link",
             "contentHash": "",
             "installedAt": "2026-11-03T23:24:53.414Z",
-            "updatedAt": "2026-11-03T23:24:53.414Z"
+            "updatedAt": "2026-11-07T04:13:56.207Z"
           },
           ".claude/skills/openspec-apply-change": {
             "kind": "skills",
@@ -73,7 +73,7 @@
             "method": "link",
             "contentHash": "",
             "installedAt": "2026-11-04T19:00:20.443Z",
-            "updatedAt": "2026-11-04T19:00:20.443Z"
+            "updatedAt": "2026-11-07T04:13:56.205Z"
           },
           ".claude/skills/openspec-archive-change": {
             "kind": "skills",
@@ -81,7 +81,7 @@
             "method": "link",
             "contentHash": "",
             "installedAt": "2026-11-04T19:00:20.444Z",
-            "updatedAt": "2026-11-04T19:00:20.444Z"
+            "updatedAt": "2026-11-07T04:13:56.205Z"
           },
           ".claude/skills/openspec-explore": {
             "kind": "skills",
@@ -89,7 +89,7 @@
             "method": "link",
             "contentHash": "",
             "installedAt": "2026-11-04T19:00:20.444Z",
-            "updatedAt": "2026-11-04T19:00:20.444Z"
+            "updatedAt": "2026-11-07T04:13:56.205Z"
           },
           ".claude/skills/openspec-propose": {
             "kind": "skills",
@@ -97,7 +97,7 @@
             "method": "link",
             "contentHash": "",
             "installedAt": "2026-11-04T19:00:20.444Z",
-            "updatedAt": "2026-11-04T19:00:20.444Z"
+            "updatedAt": "2026-11-07T04:13:56.206Z"
           },
           ".claude/skills/openspec-sync-specs": {
             "kind": "skills",
@@ -105,7 +105,7 @@
             "method": "link",
             "contentHash": "",
             "installedAt": "2026-11-04T19:00:20.444Z",
-            "updatedAt": "2026-11-04T19:00:20.444Z"
+            "updatedAt": "2026-11-07T04:13:56.206Z"
           },
           ".claude/skills/openspec-update-change": {
             "kind": "skills",
@@ -113,7 +113,7 @@
             "method": "link",
             "contentHash": "",
             "installedAt": "2026-11-04T19:00:20.445Z",
-            "updatedAt": "2026-11-04T19:00:20.445Z"
+            "updatedAt": "2026-11-07T04:13:56.206Z"
           }
         }
       }
@@ -131,7 +131,7 @@
             "method": "link",
             "contentHash": "",
             "installedAt": "2026-11-03T23:24:53.416Z",
-            "updatedAt": "2026-11-03T23:24:53.416Z"
+            "updatedAt": "2026-11-07T04:13:56.209Z"
           },
           ".opencode/agents/code.md": {
             "kind": "agents",
@@ -139,7 +139,7 @@
             "method": "link",
             "contentHash": "",
             "installedAt": "2026-11-03T23:24:53.416Z",
-            "updatedAt": "2026-11-03T23:24:53.416Z"
+            "updatedAt": "2026-11-07T04:13:56.209Z"
           },
           ".opencode/agents/plan.md": {
             "kind": "agents",
@@ -147,7 +147,7 @@
             "method": "link",
             "contentHash": "",
             "installedAt": "2026-11-03T23:24:53.416Z",
-            "updatedAt": "2026-11-03T23:24:53.416Z"
+            "updatedAt": "2026-11-07T04:13:56.209Z"
           }
         }
       }

@@ -29,10 +29,10 @@ an optional `keys(): string[]` method.
 ### Requirement: Uncached provider resolution
 
 `DelegatingContainer` SHALL resolve a provider definition, then apply its extension if present, and
-return the result without caching. Lookup uses property access (`record[key]`), reaching inherited
-properties. An extension-only key starts with `undefined`. With neither a truthy definition nor
-a truthy extension, it SHALL throw `MissingKeyError` listing the provider's own enumerable definition
-keys. It SHALL propagate errors from definitions and extensions without wrapping them.
+return the result without caching. Only own properties of the records SHALL be keys. An
+extension-only key starts with `undefined`. With neither a truthy own definition nor extension, it
+SHALL throw `MissingKeyError` listing the own enumerable definition keys. It SHALL propagate errors
+from definitions and extensions without wrapping them.
 
 #### Scenario: Repeat direct resolution
 
@@ -45,13 +45,19 @@ keys. It SHALL propagate errors from definitions and extensions without wrapping
 - **THEN** resolution throws `MissingKeyError` with that key and the own enumerable definition keys as
   its available list
 
-#### Scenario: Resolve an inherited definition
+#### Scenario: Ignore an inherited definition
 
 - **GIVEN** the definition record's prototype defines a property `inherited` as a function returning
   `"inherited-value"`
 - **WHEN** `resolve("inherited")` is called
-- **THEN** it returns `"inherited-value"` and does not throw, because property access traverses the
-  prototype chain
+- **THEN** it throws `MissingKeyError`
+
+#### Scenario: Ignore Object.prototype member names
+
+- **GIVEN** no provider contributes `toString` or `constructor`
+- **WHEN** either key is resolved
+- **THEN** resolution throws `MissingKeyError`, including when the provider omits its definition and
+  extension records
 
 ### Requirement: Lookup container selection
 
@@ -74,22 +80,21 @@ direct `resolve`, `has`, and `keys` on the child SHALL not fall back to or merge
 
 ### Requirement: Provider membership and enumeration
 
-`DelegatingContainer.has` SHALL report whether a key is reachable in the definition or extension
-records without invoking their functions. The lookup uses JavaScript `in`, which matches inherited
-properties in addition to own enumerable properties. `keys()` SHALL return the sorted, deduplicated
-union of the own enumerable string keys of the definition and extension records, including
-extension-only own keys; inherited-property keys reported by `has` are not included.
+`DelegatingContainer.has` SHALL report whether a key is an own property of the definition or
+extension records without invoking their functions; inherited properties SHALL NOT match. `keys()`
+SHALL return the sorted, deduplicated union of the own enumerable string keys of the definition and
+extension records, including extension-only own keys.
 
 #### Scenario: Enumerate definitions and extensions
 
 - **WHEN** a provider defines `a` and `b` and extends `b` and `c` as own enumerable keys
 - **THEN** `keys()` returns `["a", "b", "c"]` and `has("c")` returns `true`
 
-#### Scenario: has matches inherited properties
+#### Scenario: has ignores inherited properties
 
 - **GIVEN** the definition record's prototype defines a property `inherited`
-- **WHEN** `has("inherited")` is called
-- **THEN** it returns `true`, and `"inherited"` does not appear in `keys()`
+- **WHEN** `has("inherited")` and `has("toString")` are called
+- **THEN** both return `false`, and neither key appears in `keys()`
 
 ### Requirement: Successful-result caching
 
