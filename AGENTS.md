@@ -5,6 +5,7 @@ Read `README.md` first. It is the shared source for project status and human-fac
 Agent-only notes:
 
 - OpenSpec specs (`packages/*/openspec/specs/`) are the source of requirements; code and specs must agree. `.opencode/plans/architecture.md`, `.opencode/plans/implementation-plan.md`, and `packages/di/README.md` are design input not yet integrated into OpenSpec; read them for intent and future direction, but propose any behavior they describe as an OpenSpec change rather than treating it as a requirement.
+- Use the `openspec-*` skills to explore, propose, apply, sync, and archive changes to required behavior. Each package is its own OpenSpec root, so run `openspec` commands from `packages/<pkg>/` (the repository-root `openspec/` holds no specs).
 - Treat the instruction runner, persistent hosts, sessions, and device adapters as not started. DI/core and the initial CLI/config/inspect foundation already exist.
 - Use the documented Docker Compose setup commands only; do not infer missing test, lint, or runner commands.
 - Keep documentation and scaffolding changes minimal unless explicitly requested.
